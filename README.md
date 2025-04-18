@@ -1,1 +1,1 @@
-# MathMate---HACKHAZARDS-25
+MathMate

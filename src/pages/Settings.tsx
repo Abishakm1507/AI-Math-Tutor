@@ -12,6 +12,8 @@ import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Slider } from "@/components/ui/slider";
+import { useProfile } from "@/contexts/profile-context";
+import { useToast } from "@/hooks/use-toast";
 import { 
   User, Mail, Lock, Bell, Eye, EyeOff, Upload, Trash2, 
   Shield, CreditCard, Globe, BookOpen, BarChart4, Award
@@ -20,32 +22,75 @@ import {
 export default function Settings() {
   const [showPassword, setShowPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
+  const { profile, loading, updateProfile } = useProfile();
+  const { toast } = useToast();
   
-  // Mock user data
-  const user = {
-    name: "Alex Johnson",
-    email: "alex.johnson@example.com",
-    avatar: "",
-    level: 3,
-    xp: 2750,
-    nextLevelXp: 5000,
-    joinDate: "January 15, 2023",
-    subscription: "Premium",
-    badges: [
-      { name: "Early Adopter", color: "blue" },
-      { name: "Problem Solver", color: "green" },
-      { name: "Quiz Master", color: "purple" }
-    ]
-  };
+  // Form state
+  const [name, setName] = useState(profile?.full_name || "");
+  const [age, setAge] = useState(profile?.age?.toString() || "");
+  const [educationLevel, setEducationLevel] = useState(profile?.education_level || "");
+
+  // Update form state when profile data loads
+  useState(() => {
+    if (profile) {
+      setName(profile.full_name || "");
+      setAge(profile.age?.toString() || "");
+      setEducationLevel(profile.education_level || "");
+    }
+  });
 
   // Mock save function
-  const handleSave = (section: string) => {
-    setIsLoading(true);
-    // Simulate API call
-    setTimeout(() => {
-      setIsLoading(false);
-      // You would typically show a success notification here
-    }, 1000);
+  const handleSave = async (section: string) => {
+    if (section === 'profile') {
+      setIsLoading(true);
+      try {
+        const { data, error } = await updateProfile({
+          full_name: name,
+          age: age ? parseInt(age) : undefined,
+          education_level: educationLevel
+        });
+        
+        if (error) {
+          throw error;
+        }
+        
+        toast({
+          title: "Profile updated successfully",
+          description: "Your profile information has been saved",
+        });
+      } catch (error) {
+        console.error("Error updating profile:", error);
+        toast({
+          variant: "destructive",
+          title: "Failed to update profile",
+          description: "Please try again later",
+        });
+      } finally {
+        setIsLoading(false);
+      }
+    } else {
+      // Simulate API call for other sections
+      setIsLoading(true);
+      setTimeout(() => {
+        setIsLoading(false);
+        toast({
+          title: "Settings updated",
+          description: `Your ${section} settings have been saved`,
+        });
+      }, 1000);
+    }
+  };
+
+  // Mock user data for achievements section
+  const mockUserData = {
+    level: 3,
+    xp: 350,
+    nextLevelXp: 500,
+    badges: [
+      { name: "Quick Learner" },
+      { name: "Problem Solver" },
+      { name: "Math Genius" }
+    ]
   };
 
   return (
@@ -81,9 +126,9 @@ export default function Settings() {
                     <div className="flex flex-col md:flex-row gap-6">
                       <div className="flex flex-col items-center space-y-3">
                         <Avatar className="w-24 h-24">
-                          <AvatarImage src={user.avatar} />
+                          <AvatarImage src="" />
                           <AvatarFallback className="text-2xl bg-mathmate-100 text-mathmate-500 dark:bg-mathmate-700 dark:text-mathmate-300">
-                            {user.name.charAt(0)}
+                            {profile?.full_name ? profile.full_name.charAt(0) : '?'}
                           </AvatarFallback>
                         </Avatar>
                         <div className="flex space-x-2">
@@ -103,21 +148,40 @@ export default function Settings() {
                             <Label htmlFor="name">Full Name</Label>
                             <div className="flex">
                               <User className="h-4 w-4 text-gray-500 mr-2 mt-3" />
-                              <Input id="name" defaultValue={user.name} />
+                              <Input 
+                                id="name" 
+                                value={name} 
+                                onChange={(e) => setName(e.target.value)}
+                              />
                             </div>
                           </div>
                           <div className="space-y-2">
-                            <Label htmlFor="email">Email Address</Label>
+                            <Label htmlFor="age">Age</Label>
                             <div className="flex">
-                              <Mail className="h-4 w-4 text-gray-500 mr-2 mt-3" />
-                              <Input id="email" defaultValue={user.email} />
+                              <Input 
+                                id="age" 
+                                type="number"
+                                value={age} 
+                                onChange={(e) => setAge(e.target.value)}
+                              />
                             </div>
                           </div>
                         </div>
                         
                         <div className="space-y-2">
-                          <Label htmlFor="bio">Bio</Label>
-                          <Input id="bio" placeholder="Tell us about yourself" />
+                          <Label htmlFor="education">Education Level</Label>
+                          <Select value={educationLevel} onValueChange={setEducationLevel}>
+                            <SelectTrigger>
+                              <SelectValue placeholder="Select education level" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="high_school">High School</SelectItem>
+                              <SelectItem value="bachelors">Bachelor's Degree</SelectItem>
+                              <SelectItem value="masters">Master's Degree</SelectItem>
+                              <SelectItem value="phd">PhD</SelectItem>
+                              <SelectItem value="other">Other</SelectItem>
+                            </SelectContent>
+                          </Select>
                         </div>
                         
                         <div className="flex items-center space-x-2">
@@ -228,16 +292,16 @@ export default function Settings() {
                   <CardContent className="space-y-6">
                     <div className="space-y-2">
                       <div className="flex items-center justify-between">
-                        <Label>Level {user.level}</Label>
-                        <span className="text-sm text-gray-500">{user.xp} / {user.nextLevelXp} XP</span>
+                        <Label>Level {mockUserData.level}</Label>
+                        <span className="text-sm text-gray-500">{mockUserData.xp} / {mockUserData.nextLevelXp} XP</span>
                       </div>
-                      <Progress value={(user.xp / user.nextLevelXp) * 100} className="h-2" />
+                      <Progress value={(mockUserData.xp / mockUserData.nextLevelXp) * 100} className="h-2" />
                     </div>
                     
                     <div className="space-y-2">
                       <Label>Badges</Label>
                       <div className="flex flex-wrap gap-2">
-                        {user.badges.map((badge, index) => (
+                        {mockUserData.badges.map((badge, index) => (
                           <Badge key={index} variant="outline" className="py-1.5">
                             <Award className="h-3.5 w-3.5 mr-1.5" />
                             {badge.name}
@@ -490,7 +554,7 @@ export default function Settings() {
                           Manage your subscription and billing
                         </CardDescription>
                       </div>
-                      <Badge className="bg-mathmate-500">{user.subscription}</Badge>
+                      <Badge className="bg-mathmate-500">Premium</Badge>
                     </div>
                   </CardHeader>
                   <CardContent className="space-y-4">

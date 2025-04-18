@@ -1,13 +1,35 @@
-
-import { useState } from "react";
+import { useState, useRef } from "react";
 import { MathLayout } from "@/components/MathLayout";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
-import { Mic, Image, ScanLine, Pencil, Share2, BrainCircuit, Clock, TrendingUp } from "lucide-react";
+import { Textarea } from "@/components/ui/textarea";
+import { Input } from "@/components/ui/input";
+import { Mic, Image, ScanLine, Pencil, Share2, BrainCircuit, Clock, TrendingUp, Loader2, ArrowRight, BookOpen, ChevronRight, AlertTriangle, Keyboard } from "lucide-react";
+import { toast } from "sonner";
+import { solveWithGroq, solveWithGroqVision, convertSpeechToText } from "@/utils/apiUtils";
+
+type ChatMessage = {
+  id: string;
+  content: string;
+  type: 'question' | 'answer';
+  timestamp: Date;
+};
 
 const ProblemSolver = () => {
+  const [showFollowUp, setShowFollowUp] = useState(false);
+  const [followUpQuestion, setFollowUpQuestion] = useState("");
+  const [chatHistory, setChatHistory] = useState<ChatMessage[]>([]);
+  
   const [problem, setProblem] = useState("");
+  const [solution, setSolution] = useState("");
+  const [isLoading, setIsLoading] = useState(false);
+  const [isRecording, setIsRecording] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const audioChunksRef = useRef<Blob[]>([]);
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const [isDrawing, setIsDrawing] = useState(false);
 
   const recentProblems = [
     "Find the derivative of f(x) = x² + 2x",
@@ -36,6 +58,415 @@ const ProblemSolver = () => {
     { subject: "Geometry", progress: 60 }
   ];
 
+  const handleSolve = async () => {
+    if (!problem.trim()) {
+      toast.error("Please enter a problem first");
+      return;
+    }
+    
+    setIsLoading(true);
+    setSolution("");
+    
+    try {
+      const solutionText = await solveWithGroq(problem);
+      setSolution(solutionText);
+    } catch (error) {
+      toast.error("Failed to solve the problem. Please try again.");
+      console.error("Error solving problem:", error);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleMicClick = async () => {
+    if (isRecording) {
+      if (mediaRecorderRef.current) {
+        mediaRecorderRef.current.stop();
+      }
+      return;
+    }
+    
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      setIsRecording(true);
+      
+      const mediaRecorder = new MediaRecorder(stream);
+      mediaRecorderRef.current = mediaRecorder;
+      audioChunksRef.current = [];
+      
+      mediaRecorder.ondataavailable = (event) => {
+        audioChunksRef.current.push(event.data);
+      };
+      
+      mediaRecorder.onstop = async () => {
+        setIsRecording(false);
+        setIsLoading(true);
+        
+        try {
+          const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/webm' });
+          const spokenText = await convertSpeechToText(audioBlob);
+          
+          if (spokenText) {
+            setProblem(spokenText);
+            const solutionText = await solveWithGroq(spokenText);
+            setSolution(solutionText);
+          } else {
+            toast.error("Couldn't recognize speech. Please try again.");
+          }
+        } catch (error) {
+          toast.error("Error processing audio. Please try again.");
+          console.error("Audio processing error:", error);
+        } finally {
+          setIsLoading(false);
+        }
+        
+        stream.getTracks().forEach(track => track.stop());
+      };
+      
+      mediaRecorder.start();
+      toast.info("Recording started... Speak your math problem");
+    } catch (error) {
+      toast.error("Could not access microphone. Please check permissions.");
+      console.error("Microphone access error:", error);
+    }
+  };
+
+  const handleImageClick = () => {
+    if (fileInputRef.current) {
+      fileInputRef.current.click();
+    }
+  };
+
+  const handleImageUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+    
+    // Show loading toast
+    const loadingToast = toast.loading("Processing image...");
+    setIsLoading(true);
+    setSolution("");
+    
+    try {
+      // Validate file type and size
+      if (!file.type.startsWith('image/')) {
+        toast.error("Please upload an image file");
+        return;
+      }
+      
+      if (file.size > 10 * 1024 * 1024) { // 10MB limit
+        toast.error("Image too large. Please upload an image smaller than 10MB");
+        return;
+      }
+      
+      // Read the file as base64
+      const reader = new FileReader();
+      reader.onloadend = async () => {
+        try {
+          const base64String = (reader.result as string);
+          const base64data = base64String.split(",")[1];
+          
+          // Process the image
+          const solutionText = await solveWithGroqVision(base64data);
+          
+          if (solutionText.includes("error") || solutionText.includes("sorry")) {
+            toast.error("Failed to analyze the image. Please try with a clearer image.");
+          } else {
+            setSolution(solutionText);
+            setProblem("Image-based math problem");
+            toast.success("Image processed successfully!");
+          }
+        } catch (error) {
+          console.error("Error in image processing:", error);
+          toast.error("Failed to process the image. Please try again.");
+        }
+      };
+      
+      reader.onerror = () => {
+        toast.error("Failed to read the image file. Please try again.");
+      };
+      
+      reader.readAsDataURL(file);
+    } catch (error) {
+      toast.error("Failed to process image. Please try again.");
+      console.error("Image processing error:", error);
+    } finally {
+      setIsLoading(false);
+      toast.dismiss(loadingToast);
+    }
+  };
+
+  const initCanvas = () => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return;
+    
+    let isDrawing = false;
+    let lastX = 0;
+    let lastY = 0;
+    
+    canvas.addEventListener("mousedown", (e) => {
+      isDrawing = true;
+      lastX = e.offsetX;
+      lastY = e.offsetY;
+    });
+    
+    canvas.addEventListener("mousemove", (e) => {
+      if (!isDrawing) return;
+      ctx.beginPath();
+      ctx.moveTo(lastX, lastY);
+      ctx.lineTo(e.offsetX, e.offsetY);
+      ctx.stroke();
+      lastX = e.offsetX;
+      lastY = e.offsetY;
+    });
+    
+    canvas.addEventListener("mouseup", () => {
+      isDrawing = false;
+    });
+    
+    canvas.addEventListener("mouseout", () => {
+      isDrawing = false;
+    });
+  };
+
+  const handleDrawClick = () => {
+    setIsDrawing(!isDrawing);
+    if (!isDrawing) {
+      setTimeout(() => {
+        initCanvas();
+      }, 100);
+    }
+  };
+
+  const handleWhiteboardSubmit = async () => {
+    if (!canvasRef.current) return;
+    
+    setIsLoading(true);
+    setSolution("");
+    
+    try {
+      const canvas = canvasRef.current;
+      const base64data = canvas.toDataURL("image/png").split(",")[1];
+      
+      const solutionText = await solveWithGroqVision(base64data);
+      setSolution(solutionText);
+      
+      setProblem("Whiteboard-based problem");
+      
+      setIsDrawing(false);
+    } catch (error) {
+      toast.error("Failed to process whiteboard. Please try again.");
+      console.error("Whiteboard processing error:", error);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleShare = () => {
+    if (!solution) {
+      toast.error("Solve a problem first before sharing");
+      return;
+    }
+    
+    navigator.clipboard.writeText(`Problem: ${problem}\n\nSolution:\n${solution}`)
+      .then(() => toast.success("Solution copied to clipboard"))
+      .catch(() => toast.error("Failed to copy to clipboard"));
+  };
+
+  const handleRecentProblemClick = (recentProblem: string) => {
+    setProblem(recentProblem);
+  };
+
+  const handleFollowUpSubmit = async () => {
+    if (!followUpQuestion.trim()) {
+      toast.error("Please enter a follow-up question");
+      return;
+    }
+    
+    setIsLoading(true);
+    
+    const questionId = Date.now().toString();
+    const newQuestion: ChatMessage = {
+      id: questionId,
+      content: followUpQuestion,
+      type: 'question',
+      timestamp: new Date()
+    };
+    
+    setChatHistory(prev => [...prev, newQuestion]);
+    
+    try {
+      const contextualQuestion = `Original problem: ${problem}\n\nPrevious solution: ${solution}\n\nFollow-up question: ${followUpQuestion}`;
+      
+      const followUpSolution = await solveWithGroq(contextualQuestion);
+      
+      const newAnswer: ChatMessage = {
+        id: `${questionId}-answer`,
+        content: followUpSolution,
+        type: 'answer',
+        timestamp: new Date()
+      };
+      
+      setChatHistory(prev => [...prev, newAnswer]);
+      
+      setFollowUpQuestion("");
+    } catch (error) {
+      toast.error("Failed to process follow-up question. Please try again.");
+      console.error("Follow-up error:", error);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  // Enhanced formula rendering with better highlighting
+  const renderFormula = (text: string) => {
+    // Match mathematical expressions: x^2, f(x), etc.
+    const formulaText = text
+      // Replace mathematical expressions with highlighted span
+      .replace(/\b([a-z][a-z0-9]*\([a-z0-9,\s]+\))|(\b[a-z][0-9]*[\^]?[0-9]*)(?=\s*[\+\-\*\/\=]|\s*$)/gi, '<span class="text-blue-600 dark:text-blue-400 font-medium">$&</span>')
+      // Replace equations and formulas in $ delimiters
+      .replace(/\$([^$]+)\$/g, '<span class="math-formula">$1</span>');
+    
+    return formulaText;
+  };
+
+  const parseSteps = (text: string) => {
+    // Try to identify formulas within the text
+    const hasFormulas = text.includes('$') || 
+                      /\b([a-z][a-z0-9]*\([a-z0-9,\s]+\))|(\b[a-z][0-9]*[\^]?[0-9]*)(?=\s*[\+\-\*\/\=]|\s*$)/gi.test(text);
+    
+    if (text.includes("Step") || text.includes("step")) {
+      const stepRegex = /Step\s*(\d+)[\s:-]+([^]*?)(?=Step\s*\d+[\s:-]+|$)/gi;
+      let steps = [];
+      let match;
+      
+      while ((match = stepRegex.exec(text)) !== null) {
+        steps.push({
+          number: match[1],
+          content: match[2].trim(),
+          hasFormula: hasFormulas
+        });
+      }
+      
+      if (steps.length > 0) {
+        return steps;
+      }
+    }
+    
+    const numberedBulletRegex = /(\d+)[.)][\s]+([^]*?)(?=\d+[.)][\s]+|$)/g;
+    let steps = [];
+    let match;
+    
+    while ((match = numberedBulletRegex.exec(text)) !== null) {
+      steps.push({
+        number: match[1],
+        content: match[2].trim(),
+        hasFormula: hasFormulas
+      });
+    }
+    
+    if (steps.length > 0) {
+      return steps;
+    }
+    
+    const paragraphs = text.split("\n\n").filter(p => p.trim().length > 0);
+    if (paragraphs.length > 1) {
+      return paragraphs.map((content, i) => ({
+        number: (i + 1).toString(),
+        content,
+        hasFormula: hasFormulas
+      }));
+    }
+    
+    return [{
+      number: "1",
+      content: text,
+      hasFormula: hasFormulas
+    }];
+  };
+
+  const renderSolutionContent = (content: string) => {
+    // Remove markdown bold syntax
+    const cleanContent = content.replace(/\*\*([^*]+)\*\*/g, '$1');
+    const steps = parseSteps(cleanContent);
+    
+    if (steps.length <= 1 && !cleanContent.includes("Step")) {
+      return (
+        <div className="pl-4 border-l-2 border-blue-200 dark:border-blue-800">
+          <div 
+            dangerouslySetInnerHTML={{ 
+              __html: renderFormula(cleanContent) 
+            }} 
+          />
+        </div>
+      );
+    }
+    
+    return (
+      <div className="space-y-4">
+        {steps.map((step, index) => (
+          <div key={index} className="bg-gray-50 dark:bg-gray-800/50 rounded-lg p-4 shadow-sm">
+            <div className="flex items-center gap-2 mb-3">
+              <div className="min-w-8 h-8 rounded-full bg-blue-100 dark:bg-blue-900/50 text-blue-600 dark:text-blue-400 flex items-center justify-center font-semibold">
+                {step.number}
+              </div>
+              <h4 className="font-medium text-lg">Step {step.number}</h4>
+            </div>
+            <div className="pl-4 border-l-2 border-blue-200 dark:border-blue-800">
+              <div 
+                dangerouslySetInnerHTML={{ 
+                  __html: renderFormula(typeof step === 'string' ? step : step.content) 
+                }} 
+              />
+            </div>
+          </div>
+        ))}
+      </div>
+    );
+  };
+
+  const renderChatMessageContent = (content: string) => {
+    // Remove markdown bold syntax
+    const cleanContent = content.replace(/\*\*([^*]+)\*\*/g, '$1');
+    const steps = parseSteps(cleanContent);
+    
+    if (steps.length <= 1 && !cleanContent.includes("Step")) {
+      return (
+        <div className="pl-3 border-l-2 border-blue-200 dark:border-blue-800">
+          <div 
+            dangerouslySetInnerHTML={{ 
+              __html: renderFormula(cleanContent) 
+            }} 
+          />
+        </div>
+      );
+    }
+    
+    return (
+      <div className="space-y-3">
+        {steps.map((step, index) => (
+          <div key={index} className="bg-gray-50 dark:bg-gray-800/50 rounded-lg p-3 shadow-sm">
+            <div className="flex items-center gap-2 mb-2">
+              <div className="min-w-6 h-6 rounded-full bg-blue-100 dark:bg-blue-900/50 text-blue-600 dark:text-blue-400 flex items-center justify-center font-medium text-sm">
+                {step.number}
+              </div>
+              <h4 className="font-medium text-sm">Step {step.number}</h4>
+            </div>
+            <div className="pl-3 border-l-2 border-blue-200 dark:border-blue-800">
+              <div 
+                dangerouslySetInnerHTML={{ 
+                  __html: renderFormula(typeof step === 'string' ? step : step.content) 
+                }} 
+              />
+            </div>
+          </div>
+        ))}
+      </div>
+    );
+  };
+
   return (
     <MathLayout>
       <div className="space-y-6">
@@ -49,40 +480,227 @@ const ProblemSolver = () => {
         <div className="grid grid-cols-1 lg:grid-cols-4 gap-4 md:gap-6">
           <div className="lg:col-span-3 space-y-4 md:space-y-6">
             <Card className="p-4 md:p-6">
-              <textarea
-                value={problem}
-                onChange={(e) => setProblem(e.target.value)}
-                placeholder="Type or paste your math problem here..."
-                className="w-full min-h-[120px] md:min-h-[200px] p-3 md:p-4 mb-4 border rounded-lg resize-none focus:outline-none focus:ring-2 focus:ring-mathmate-300"
-              />
+              {isDrawing ? (
+                <div className="space-y-4">
+                  <canvas 
+                    ref={canvasRef}
+                    width="600"
+                    height="300"
+                    className="border border-gray-300 rounded-lg bg-white w-full"
+                  ></canvas>
+                  <div className="flex justify-between">
+                    <Button onClick={() => setIsDrawing(false)} variant="outline">
+                      Cancel
+                    </Button>
+                    <Button onClick={handleWhiteboardSubmit}>
+                      Process Whiteboard
+                    </Button>
+                  </div>
+                </div>
+              ) : (
+                <>
+                  <Textarea
+                    value={problem}
+                    onChange={(e) => setProblem(e.target.value)}
+                    placeholder="Type or paste your math problem here..."
+                    className="w-full min-h-[120px] md:min-h-[200px] p-3 md:p-4 mb-4 border rounded-lg resize-none focus:outline-none focus:ring-2 focus:ring-mathmate-300"
+                  />
 
-              <div className="flex flex-wrap gap-2 md:gap-3 justify-center sm:justify-start">
-                <Button variant="outline" size="icon" className="h-9 w-9 md:h-10 md:w-10">
-                  <Mic className="h-4 w-4" />
-                </Button>
-                <Button variant="outline" size="icon" className="h-9 w-9 md:h-10 md:w-10">
-                  <Image className="h-4 w-4" />
-                </Button>
-                <Button variant="outline" size="icon" className="h-9 w-9 md:h-10 md:w-10">
-                  <ScanLine className="h-4 w-4" />
-                </Button>
-                <Button variant="outline" size="icon" className="h-9 w-9 md:h-10 md:w-10">
-                  <Pencil className="h-4 w-4" />
-                </Button>
-                <Button variant="outline" size="icon" className="h-9 w-9 md:h-10 md:w-10">
-                  <Share2 className="h-4 w-4" />
-                </Button>
-              </div>
+                  <div className="flex flex-wrap gap-2 md:gap-3 justify-center sm:justify-between">
+                    <div className="flex flex-wrap gap-2 md:gap-3">
+                      <Button 
+                        variant="outline" 
+                        size="icon" 
+                        className={`h-9 w-9 md:h-10 md:w-10 ${isRecording ? 'bg-red-100' : ''}`} 
+                        onClick={handleMicClick}
+                      >
+                        <Mic className={`h-4 w-4 ${isRecording ? 'text-red-500' : ''}`} />
+                      </Button>
+                      <Button variant="outline" size="icon" className="h-9 w-9 md:h-10 md:w-10" onClick={handleImageClick}>
+                        <Image className="h-4 w-4" />
+                      </Button>
+                      <Button variant="outline" size="icon" className="h-9 w-9 md:h-10 md:w-10">
+                        <ScanLine className="h-4 w-4" />
+                      </Button>
+                      <Button 
+                        variant="outline" 
+                        size="icon" 
+                        className={`h-9 w-9 md:h-10 md:w-10 ${isDrawing ? 'bg-blue-100' : ''}`}
+                        onClick={handleDrawClick}
+                      >
+                        <Pencil className="h-4 w-4" />
+                      </Button>
+                      <Button variant="outline" size="icon" className="h-9 w-9 md:h-10 md:w-10" onClick={handleShare}>
+                        <Share2 className="h-4 w-4" />
+                      </Button>
+                      <Button variant="outline" size="icon" className="h-9 w-9 md:h-10 md:w-10" onClick={() => document.querySelector('textarea')?.focus()}>
+                        <Keyboard className="h-4 w-4" />
+                      </Button>
+                    </div>
+                    <Button 
+                      onClick={handleSolve} 
+                      disabled={isLoading || !problem.trim()} 
+                      className="px-6"
+                    >
+                      {isLoading ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
+                      Solve
+                    </Button>
+    
+                  </div>
+
+                  <input
+                    type="file"
+                    ref={fileInputRef}
+                    accept="image/*"
+                    onChange={handleImageUpload}
+                    style={{ display: 'none' }}
+                  />
+                </>
+              )}
             </Card>
 
-            {problem && (
-              <Card className="p-4 md:p-6">
+            {(solution || isLoading) && (
+              <Card className="p-4 md:p-6 shadow-md">
                 <div className="space-y-4 md:space-y-6">
-                  <div className="flex items-center gap-2">
-                    <div className="min-w-7 h-7 md:min-w-8 md:h-8 rounded-full bg-blue-100 text-blue-600 flex items-center justify-center font-semibold text-sm md:text-base">1</div>
-                    <h3 className="text-base md:text-lg font-semibold break-words">Step 1: Identify the equation type</h3>
-                  </div>
-                  <p className="text-sm md:text-base break-words">Let's analyze this problem step by step...</p>
+                  {isLoading && chatHistory.length === 0 ? (
+                    <div className="flex items-center justify-center py-8">
+                      <Loader2 className="h-8 w-8 animate-spin text-primary" />
+                      <span className="ml-2 text-lg">Solving the problem...</span>
+                    </div>
+                  ) : (
+                    <>
+                      <div className="flex items-center gap-2 border-b pb-3">
+                        <div className="min-w-7 h-7 md:min-w-8 md:h-8 rounded-full bg-blue-100 text-blue-600 flex items-center justify-center font-semibold text-sm md:text-base">
+                          <BookOpen className="h-4 w-4" />
+                        </div>
+                        <h3 className="text-base md:text-lg font-semibold break-words">Solution</h3>
+                      </div>
+                      
+                      <div className="whitespace-pre-line text-sm md:text-base break-words bg-gray-50 dark:bg-gray-800 p-4 rounded-lg">
+                        {renderSolutionContent(solution)}
+                      </div>
+                      
+                      {chatHistory.length > 0 && (
+                        <div className="mt-6 space-y-4 border-t pt-4">
+                          <div className="flex items-center gap-2 mb-3">
+                            <div className="min-w-7 h-7 md:min-w-8 md:h-8 rounded-full bg-indigo-100 text-indigo-600 flex items-center justify-center font-semibold text-sm md:text-base">
+                              <ChevronRight className="h-4 w-4" />
+                            </div>
+                            <h3 className="text-base md:text-lg font-semibold break-words">Follow-up Questions</h3>
+                          </div>
+                          
+                          <div className="space-y-6 max-h-[500px] overflow-y-auto pr-2 custom-scrollbar">
+                            {chatHistory.map((message, index) => {
+                              const isQuestion = message.type === 'question';
+                              const isConsecutive = index > 0 && chatHistory[index - 1].type === message.type;
+                              
+                              return (
+                                <div 
+                                  key={message.id} 
+                                  className={`flex ${isQuestion ? 'justify-end' : 'justify-start'} ${isConsecutive ? 'mt-2' : 'mt-6'}`}
+                                >
+                                  {!isQuestion && !isConsecutive && (
+                                    <div className="w-8 h-8 rounded-full bg-blue-600 text-white flex items-center justify-center mr-2 flex-shrink-0">
+                                      <span className="text-xs font-medium">AI</span>
+                                    </div>
+                                  )}
+                                  
+                                  <div 
+                                    className={`max-w-[85%] rounded-2xl p-4 ${
+                                      isQuestion 
+                                        ? 'bg-indigo-600 text-white' 
+                                        : 'bg-gray-100 text-gray-900 dark:bg-gray-800 dark:text-gray-100'
+                                    } ${isQuestion && isConsecutive ? 'rounded-tr-sm' : ''} ${!isQuestion && isConsecutive ? 'rounded-tl-sm' : ''}`}
+                                  >
+                                    {isQuestion ? (
+                                      <div className="whitespace-pre-line text-sm md:text-base break-words">
+                                        {message.content}
+                                      </div>
+                                    ) : (
+                                      renderChatMessageContent(message.content)
+                                    )}
+                                    <div className={`text-xs ${isQuestion ? 'text-indigo-200' : 'text-gray-500 dark:text-gray-400'} mt-1 text-right`}>
+                                      {message.timestamp.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}
+                                    </div>
+                                  </div>
+                                  
+                                  {isQuestion && !isConsecutive && (
+                                    <div className="w-8 h-8 rounded-full bg-indigo-100 text-indigo-600 flex items-center justify-center ml-2 flex-shrink-0">
+                                      <span className="text-xs font-medium">You</span>
+                                    </div>
+                                  )}
+                                </div>
+                              );
+                            })}
+                          </div>
+                          
+                          {isLoading && (
+                            <div className="flex justify-start mt-4">
+                              <div className="bg-gray-100 dark:bg-gray-800 rounded-2xl p-3 flex items-center">
+                                <div className="flex space-x-1">
+                                  <div className="w-2 h-2 bg-gray-400 dark:bg-gray-500 rounded-full animate-bounce" style={{ animationDelay: '0ms' }}></div>
+                                  <div className="w-2 h-2 bg-gray-400 dark:bg-gray-500 rounded-full animate-bounce" style={{ animationDelay: '150ms' }}></div>
+                                  <div className="w-2 h-2 bg-gray-400 dark:bg-gray-500 rounded-full animate-bounce" style={{ animationDelay: '300ms' }}></div>
+                                </div>
+                                <span className="ml-2 text-sm text-gray-500 dark:text-gray-400">AI is thinking...</span>
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      )}
+                      
+                      {(showFollowUp || chatHistory.length > 0) ? (
+                        <div className="pt-4 space-y-3">
+                          <div className="relative flex items-center bg-white dark:bg-gray-950 border border-gray-300 dark:border-gray-700 rounded-full overflow-hidden shadow-sm focus-within:ring-2 focus-within:ring-indigo-500 focus-within:border-indigo-500">
+                            <Input
+                              value={followUpQuestion}
+                              onChange={(e) => setFollowUpQuestion(e.target.value)}
+                              placeholder="Ask follow up questions here..."
+                              className="border-0 shadow-none focus-visible:ring-0 focus-visible:ring-offset-0 py-6 pl-4 pr-12 text-base"
+                              onKeyDown={(e) => {
+                                if (e.key === 'Enter' && !e.shiftKey) {
+                                  e.preventDefault();
+                                  handleFollowUpSubmit();
+                                }
+                              }}
+                            />
+                            <Button 
+                              className="absolute right-1 rounded-full h-10 w-10 p-0 bg-indigo-600 hover:bg-indigo-700 transition-colors"
+                              onClick={handleFollowUpSubmit}
+                              disabled={!followUpQuestion.trim() || isLoading}
+                            >
+                              {isLoading ? (
+                                <Loader2 className="h-5 w-5 animate-spin text-white" />
+                              ) : (
+                                <ArrowRight className="h-5 w-5 text-white" />
+                              )}
+                            </Button>
+                          </div>
+                          <p className="text-xs text-gray-500 dark:text-gray-400 text-center">
+                            Press Enter to send your question
+                          </p>
+                        </div>
+                      ) : (
+                        <div className="flex flex-wrap gap-3 pt-4">
+                          <Button 
+                            className="bg-blue-600 hover:bg-blue-700 text-white transition-colors shadow-sm"
+                            onClick={() => {
+                              toast.info("Graph visualization feature coming soon!");
+                            }}
+                          >
+                            Visualize Graph
+                          </Button>
+                          <Button 
+                            variant="outline" 
+                            className="border-blue-600 text-blue-600 hover:bg-blue-50 transition-colors"
+                            onClick={() => setShowFollowUp(true)}
+                          >
+                            Ask Follow-up
+                          </Button>
+                        </div>
+                      )}
+                    </>
+                  )}
                 </div>
               </Card>
             )}
@@ -97,6 +715,7 @@ const ProblemSolver = () => {
                     key={index} 
                     variant="outline" 
                     className="w-full justify-start text-left h-auto py-2 text-sm md:text-base break-words overflow-hidden text-ellipsis"
+                    onClick={() => handleRecentProblemClick(problem)}
                   >
                     <span className="line-clamp-2">{problem}</span>
                   </Button>

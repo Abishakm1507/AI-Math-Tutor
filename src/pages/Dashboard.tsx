@@ -6,15 +6,16 @@ import { Progress } from "@/components/ui/progress";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
 import { AppSidebar } from "@/components/AppSidebar";
+import { useProfile } from "@/contexts/profile-context";
 import { 
   BrainCircuit, BookOpen, ClipboardCheck, LineChart, Box, FileText, Gamepad2, 
   User, Settings, LogOut, Bell, Award, Home
 } from "lucide-react";
 
 const Dashboard = () => {
+  const { profile, loading } = useProfile();
   
-  const user = {
-    name: "Alex Johnson",
+  const userProgress = {
     level: 3,
     xp: 350,
     totalXp: 500,
@@ -61,7 +62,7 @@ const Dashboard = () => {
                 <div className="flex flex-col md:flex-row items-start md:items-center justify-between">
                   <div>
                     <h2 className="text-2xl font-bold text-gray-900 dark:text-white">
-                      Welcome back, {user.name}!
+                      Welcome back, {loading ? "..." : (profile?.full_name || "User")}!
                     </h2>
                     <p className="mt-1 text-gray-600 dark:text-gray-300">
                       Continue your math learning journey. You're making great progress!
@@ -69,7 +70,7 @@ const Dashboard = () => {
                   </div>
                   <div className="mt-4 md:mt-0 flex items-center space-x-2">
                     <Badge variant="secondary" className="text-xs py-1">
-                      {user.streak} Day Streak 🔥
+                      {userProgress.streak} Day Streak 🔥
                     </Badge>
                     <Button className="bg-mathmate-300 hover:bg-mathmate-400 text-white">
                       Continue Learning
@@ -90,10 +91,10 @@ const Dashboard = () => {
                 <div className="space-y-4">
                   <div>
                     <div className="flex items-center justify-between mb-1">
-                      <span className="text-sm font-medium text-gray-700 dark:text-gray-300">Level {user.level}</span>
-                      <span className="text-sm font-medium text-gray-700 dark:text-gray-300">{user.xp}/{user.totalXp} XP</span>
+                      <span className="text-sm font-medium text-gray-700 dark:text-gray-300">Level {userProgress.level}</span>
+                      <span className="text-sm font-medium text-gray-700 dark:text-gray-300">{userProgress.xp}/{userProgress.totalXp} XP</span>
                     </div>
-                    <Progress value={user.progress} className="h-2" indicatorClassName="bg-mathmate-400" />
+                    <Progress value={userProgress.progress} className="h-2" indicatorClassName="bg-mathmate-400" />
                   </div>
                   <div>
                     <div className="flex items-center justify-between mb-1">
@@ -119,7 +120,7 @@ const Dashboard = () => {
               </CardHeader>
               <CardContent>
                 <ul className="space-y-3">
-                  {user.recentActivity.map((activity, index) => (
+                  {userProgress.recentActivity.map((activity, index) => (
                     <li key={index} className="flex items-start space-x-3">
                       <div className="p-2 bg-mathmate-100 dark:bg-mathmate-700 rounded-full">
                         {activity.type === "quiz" && <BookOpen className="h-4 w-4 text-mathmate-500 dark:text-mathmate-300" />}
