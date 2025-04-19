@@ -1,6 +1,6 @@
 
 export const GROQ_API_KEY = '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';
-export const ELEVEN_LABS_API_KEY = 'k_014d5bcd3196f908cbe5c1b055969b8e8ae9007e5a8cb7d3';
+export const ELEVEN_LABS_API_KEY = 'sk_0a698d0fe41e151a6beb111e56e8c33e47b779c45349290c';
 
 // For text-based problems
 export async function solveWithGroq(problem: string): Promise<string> {
@@ -96,19 +96,38 @@ export async function solveWithGroqVision(imageBase64: string): Promise<string> 
 export async function convertSpeechToText(audioBlob: Blob): Promise<string> {
   try {
     const formData = new FormData();
-    formData.append('audio', audioBlob);
-    formData.append('model_id', 'eleven_multilingual_v2');
+    formData.append('file', audioBlob);
+    formData.append('model_id', 'scribe_v1');
+    formData.append('tag_audio_events', 'true');
+    formData.append('language_code', 'eng');
+    formData.append('diarize', 'true');
 
     const response = await fetch('https://api.elevenlabs.io/v1/speech-to-text', {
       method: 'POST',
       headers: {
-        'xi-api-key': ELEVEN_LABS_API_KEY
+        'xi-api-key': ELEVEN_LABS_API_KEY,
+        'Accept': 'application/json'
       },
       body: formData
     });
 
+    if (!response.ok) {
+      const errorData = await response.json();
+      console.error('ElevenLabs API error:', errorData);
+      throw new Error(`ElevenLabs API error: ${response.status}`);
+    }
+
     const data = await response.json();
-    return data.text || '';
+    
+    // Extract the transcription text from the response
+    if (data.text) {
+      return data.text;
+    } else if (data.transcription) {
+      return data.transcription;
+    } else {
+      console.error('Unexpected response format:', data);
+      return '';
+    }
   } catch (error) {
     console.error('Error converting speech to text:', error);
     return '';
