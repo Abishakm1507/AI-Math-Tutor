@@ -6,6 +6,8 @@ import { Input } from "@/components/ui/input";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ChevronDown, ChevronUp, Eraser, Share2, Download, Save, Settings, Eye, EyeOff } from "lucide-react";
 import { MathLayout } from "@/components/MathLayout";
+import DesmosCalculator from "@/components/DesmosCalculator";
+import Desmos3DCalculator from "@/components/Desmos3DCalculator";
 
 const Visualizer = () => {
   const [equation, setEquation] = useState("y = x^2");
@@ -28,9 +30,10 @@ const Visualizer = () => {
           </p>
         </div>
 
+        {/* First Row: Equation Input and Graph View */}
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 md:gap-6">
-          <div className="lg:col-span-1 space-y-4 md:space-y-6">
-            <Card>
+          <div className="lg:col-span-1">
+            <Card className="h-full">
               <CardHeader>
                 <CardTitle className="text-lg md:text-xl">Equation Input</CardTitle>
                 <CardDescription className="text-sm md:text-base">Enter the equation you want to visualize</CardDescription>
@@ -116,33 +119,6 @@ const Visualizer = () => {
                 </div>
               </CardContent>
             </Card>
-            
-            <Card>
-              <CardHeader>
-                <CardTitle>Equation Library</CardTitle>
-                <CardDescription>Quick access to common equations</CardDescription>
-              </CardHeader>
-              <CardContent>
-                <div className="space-y-2">
-                  {[
-                    { name: "Quadratic", equation: "y = x^2" },
-                    { name: "Cubic", equation: "y = x^3" },
-                    { name: "Sine Wave", equation: "y = sin(x)" },
-                    { name: "Circle", equation: "x^2 + y^2 = 25" },
-                    { name: "Exponential", equation: "y = e^x" },
-                  ].map((item, index) => (
-                    <Button 
-                      key={index} 
-                      variant="outline" 
-                      className="w-full justify-start text-left"
-                      onClick={() => setEquation(item.equation)}
-                    >
-                      {item.name}
-                    </Button>
-                  ))}
-                </div>
-              </CardContent>
-            </Card>
           </div>
 
           <div className="lg:col-span-2">
@@ -167,23 +143,55 @@ const Visualizer = () => {
                   </Button>
                 </div>
               </CardHeader>
-              <CardContent className="min-h-[400px] flex items-center justify-center">
-                <div className="text-center">
-                  <div className="bg-gray-100 dark:bg-gray-800 p-8 rounded-lg mb-4">
-                    <div className="text-mathmate-400 text-lg font-semibold mb-2">
-                      {visualization === "2d" ? "2D Graph Preview" : "3D Surface Preview"}
-                    </div>
-                    <div className="text-gray-500">
-                      {equation}
-                    </div>
-                  </div>
-                  <p className="text-sm text-gray-500 dark:text-gray-400">
-                    In a complete implementation, a mathematical visualization would be rendered here using a library like Recharts, Plotly, or Three.js
-                  </p>
-                </div>
+              
+              <CardContent className="min-h-[400px]">
+                {visualization === "2d" ? (
+                  <DesmosCalculator 
+                    equation={equation}
+                    domain={domain}
+                    range={range}
+                  />
+                ) : (
+                  <Desmos3DCalculator equation={equation} />
+                )}
               </CardContent>
             </Card>
           </div>
+        </div>
+
+        {/* Second Row: Equation Library */}
+        <div className="w-full">
+          <Card>
+            <CardHeader>
+              <CardTitle>Equation Library</CardTitle>
+              <CardDescription>Quick access to common equations</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3">
+                {[
+                  { name: "Quadratic", equation: "y = x^2" },
+                  { name: "Cubic", equation: "y = x^3" },
+                  { name: "Sine Wave", equation: "y = sin(x)" },
+                  { name: "Circle", equation: "x^2 + y^2 = 25" },
+                  { name: "Exponential", equation: "y = e^x" },
+                  { name: "Sphere", equation: "z^2 + y^2 + x^2 = 25" },
+                  { name: "Paraboloid", equation: "z = x^2 + y^2" },
+                  { name: "Wave Surface", equation: "z = sin(x) cos(y)" },
+                  { name: "Saddle", equation: "z = x^2 - y^2" },
+                  { name: "Cone", equation: "z = sqrt(x^2 + y^2)" },
+                ].map((item, index) => (
+                  <Button 
+                    key={index} 
+                    variant="outline" 
+                    className="w-full justify-start text-left px-4 py-2"
+                    onClick={() => setEquation(item.equation)}
+                  >
+                    {item.name}
+                  </Button>
+                ))}
+              </div>
+            </CardContent>
+          </Card>
         </div>
       </div>
     </MathLayout>
