@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Link } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
@@ -9,12 +9,16 @@ import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Label } from "@/components/ui/label";
 import { ArrowLeft, Timer, Award, CheckCircle2, XCircle, BarChart } from "lucide-react";
 import { MathLayout } from "@/components/MathLayout";
+import { Input } from "@/components/ui/input";
+
+export const GROK_API_KEY = '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';
 
 type QuizQuestion = {
   id: number;
   question: string;
   options: string[];
   correctAnswer: number;
+  topic: string;
 };
 
 type DifficultyLevel = 'easy' | 'medium' | 'hard';
@@ -26,58 +30,170 @@ const QuizZone = () => {
   const [topics, setTopics] = useState<Topic[]>(['algebra']);
   const [currentQuestion, setCurrentQuestion] = useState(0);
   const [selectedAnswers, setSelectedAnswers] = useState<number[]>([]);
-  const [timeRemaining, setTimeRemaining] = useState(300); // 5 minutes in seconds
+  const [timeRemaining, setTimeRemaining] = useState(300);
   const [quizStarted, setQuizStarted] = useState(false);
-  
-  const quizQuestions: QuizQuestion[] = [
-    {
-      id: 1,
-      question: "Solve for x: 3x + 5 = 14",
-      options: ["x = 2", "x = 3", "x = 4", "x = 5"],
-      correctAnswer: 1
-    },
-    {
-      id: 2,
-      question: "Find the derivative of f(x) = x²",
-      options: ["f'(x) = 2x", "f'(x) = x²", "f'(x) = 2", "f'(x) = x"],
-      correctAnswer: 0
-    },
-    {
-      id: 3,
-      question: "What is the area of a circle with radius 5?",
-      options: ["25π", "10π", "15π", "20π"],
-      correctAnswer: 0
-    },
-    {
-      id: 4,
-      question: "Simplify: (3x² + 2x - 1) - (x² - 3x + 2)",
-      options: ["2x² + 5x - 3", "4x² - x + 1", "2x² - x - 3", "4x² + 5x - 3"],
-      correctAnswer: 0
-    },
-    {
-      id: 5,
-      question: "What is the value of sin(30°)?",
-      options: ["1/2", "√2/2", "√3/2", "1"],
-      correctAnswer: 0
-    }
-  ];
+  const [customTopic, setCustomTopic] = useState<string>("");
+  const [quizQuestions, setQuizQuestions] = useState<QuizQuestion[]>([]);
+  const [analysis, setAnalysis] = useState<{
+    strengths: string[];
+    weaknesses: string[];
+    recommendations: string[];
+    topicPerformance: { [key: string]: number };
+  }>({ strengths: [], weaknesses: [], recommendations: [], topicPerformance: {} });
 
-  const handleTopicChange = (topic: Topic) => {
-    if (topics.includes(topic)) {
-      setTopics(topics.filter(t => t !== topic));
-    } else {
-      setTopics([...topics, topic]);
+  // Timer effect
+  useEffect(() => {
+    if (stage === 'quiz' && quizStarted && timeRemaining > 0) {
+      const timer = setInterval(() => {
+        setTimeRemaining(prev => {
+          if (prev <= 1) {
+            setStage('results');
+            return 0;
+          }
+          return prev - 1;
+        });
+      }, 1000);
+      return () => clearInterval(timer);
+    }
+  }, [stage, quizStarted, timeRemaining]);
+
+  const generateQuestions = async () => {
+    try {
+      const selectedTopics = [...topics];
+      if (customTopic) {
+        selectedTopics.push(customTopic as Topic);
+      }
+
+      const prompt = `Create exactly 10 multiple choice math questions for these topics: ${selectedTopics.join(', ')} at ${difficulty} level. Return ONLY a JSON array in this exact format, with no additional text: [{"id": 1, "question": "question text", "options": ["option1", "option2", "option3", "option4"], "correctAnswer": 0, "topic": "topic name"}, ...]. The correctAnswer should be a number 0-3 representing the index of the correct option.`;
+
+      const response = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${GROK_API_KEY}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          model: "llama3-8b-8192",
+          messages: [{ role: "user", content: prompt }],
+          temperature: 0.3,
+          max_tokens: 2000
+        })
+      });
+
+      if (!response.ok) {
+        throw new Error(`API request failed: ${response.status}`);
+      }
+
+      const data = await response.json();
+      const questions = JSON.parse(data.choices[0].message.content);
+      
+      if (!Array.isArray(questions) || questions.length !== 10) {
+        throw new Error('Invalid questions format');
+      }
+      
+      setQuizQuestions(questions);
+      startQuiz();
+    } catch (error) {
+      console.error('Error generating questions:', error);
+      alert('Failed to generate questions. Please try again.');
     }
   };
 
-  const startQuiz = () => {
-    if (topics.length === 0) {
-      alert("Please select at least one topic");
+  const analyzeResults = async () => {
+    const correctQuestions = quizQuestions.filter((_, index) => 
+      selectedAnswers[index] === quizQuestions[index].correctAnswer
+    );
+    
+    const incorrectQuestions = quizQuestions.filter((_, index) => 
+      selectedAnswers[index] !== quizQuestions[index].correctAnswer
+    );
+
+    // Calculate topic performance
+    const topicPerformance: { [key: string]: { correct: number; total: number } } = {};
+    quizQuestions.forEach((q, index) => {
+      if (!topicPerformance[q.topic]) {
+        topicPerformance[q.topic] = { correct: 0, total: 0 };
+      }
+      topicPerformance[q.topic].total++;
+      if (selectedAnswers[index] === q.correctAnswer) {
+        topicPerformance[q.topic].correct++;
+      }
+    });
+
+    const formattedTopicPerformance = Object.fromEntries(
+      Object.entries(topicPerformance).map(([topic, { correct, total }]) => [
+        topic,
+        Math.round((correct / total) * 100)
+      ])
+    );
+
+    const prompt = `Analyze these math quiz results:
+      Correct answers by topic: ${correctQuestions.map(q => q.topic).join(', ')}
+      Incorrect answers by topic: ${incorrectQuestions.map(q => q.topic).join(', ')}
+      Topic performance: ${JSON.stringify(formattedTopicPerformance)}
+      Provide detailed analysis in JSON format with: {
+        "strengths": ["specific strength 1", "specific strength 2", ...],
+        "weaknesses": ["specific weakness 1", "specific weakness 2", ...],
+        "recommendations": ["specific recommendation 1", "specific recommendation 2", ...],
+        "topicPerformance": { "topic1": percentage, "topic2": percentage, ... }
+      }
+      Make strengths and weaknesses specific to topics and performance levels. Provide actionable recommendations.`;
+
+    try {
+      const response = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${GROK_API_KEY}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          model: "mixtral-8x7b-32768",
+          messages: [{ role: "user", content: prompt }],
+          temperature: 0.7,
+          max_tokens: 1000
+        })
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to generate analysis');
+      }
+
+      const data = await response.json();
+      const analysisData = JSON.parse(data.choices[0].message.content);
+      setAnalysis(analysisData);
+    } catch (error) {
+      console.error('Error generating analysis:', error);
+      setAnalysis({
+        strengths: ["General mathematical reasoning"],
+        weaknesses: ["Need more practice in selected topics"],
+        recommendations: ["Review incorrect answers", "Practice similar problems"],
+        topicPerformance: formattedTopicPerformance
+      });
+    }
+  };
+
+  const initializeQuiz = () => {
+    if (topics.length === 0 && !customTopic) {
+      alert("Please select at least one topic or enter a custom topic");
       return;
     }
+    generateQuestions();
+  };
+
+  const handleTopicChange = (topic: Topic) => {
+    setTopics(prev => 
+      prev.includes(topic) 
+        ? prev.filter(t => t !== topic)
+        : [...prev, topic]
+    );
+  };
+
+  const startQuiz = () => {
     setStage('quiz');
     setQuizStarted(true);
     setSelectedAnswers(new Array(quizQuestions.length).fill(-1));
+    setCurrentQuestion(0);
+    setTimeRemaining(300);
   };
 
   const handleAnswerSelect = (answerIndex: number) => {
@@ -90,6 +206,7 @@ const QuizZone = () => {
     if (currentQuestion < quizQuestions.length - 1) {
       setCurrentQuestion(currentQuestion + 1);
     } else {
+      analyzeResults();
       setStage('results');
     }
   };
@@ -102,7 +219,7 @@ const QuizZone = () => {
 
   const calculateScore = () => {
     return selectedAnswers.reduce((score, answer, index) => {
-      return answer === quizQuestions[index].correctAnswer ? score + 1 : score;
+      return answer === quizQuestions[index]?.correctAnswer ? score + 1 : score;
     }, 0);
   };
 
@@ -155,11 +272,25 @@ const QuizZone = () => {
                       <Label htmlFor={topic} className="capitalize">{topic}</Label>
                     </div>
                   ))}
+                  <div className="col-span-full mt-4">
+                    <Label htmlFor="custom-topic">Custom Topic</Label>
+                    <Input
+                      id="custom-topic"
+                      value={customTopic}
+                      onChange={(e) => setCustomTopic(e.target.value)}
+                      placeholder="Enter a custom topic..."
+                      className="mt-1"
+                    />
+                  </div>
                 </div>
               </div>
             </CardContent>
             <CardFooter>
-              <Button size="lg" className="w-full sm:w-auto bg-mathmate-300 hover:bg-mathmate-400 text-white">
+              <Button 
+                size="lg" 
+                className="w-full sm:w-auto bg-mathmate-300 hover:bg-mathmate-400 text-white"
+                onClick={initializeQuiz}
+              >
                 Start Quiz
               </Button>
             </CardFooter>
@@ -193,17 +324,31 @@ const QuizZone = () => {
 
           <Card className="border-l-4 border-l-mathmate-300">
             <CardHeader>
-              <CardTitle className="text-xl">{quizQuestions[currentQuestion].question}</CardTitle>
+              <CardTitle className="text-xl">{quizQuestions[currentQuestion]?.question}</CardTitle>
+              <CardDescription>Topic: {quizQuestions[currentQuestion]?.topic}</CardDescription>
             </CardHeader>
             <CardContent>
               <RadioGroup 
-                value={selectedAnswers[currentQuestion] >= 0 ? selectedAnswers[currentQuestion].toString() : undefined}
+                value={selectedAnswers[currentQuestion]?.toString() || ""}
                 onValueChange={(value) => handleAnswerSelect(parseInt(value))}
+                className="space-y-4"
               >
-                {quizQuestions[currentQuestion].options.map((option, index) => (
-                  <div key={index} className="flex items-center space-x-2 py-3">
-                    <RadioGroupItem value={index.toString()} id={`option-${index}`} />
-                    <Label className="text-base" htmlFor={`option-${index}`}>{option}</Label>
+                {quizQuestions[currentQuestion]?.options.map((option, index) => (
+                  <div 
+                    key={index} 
+                    className="flex items-center space-x-3 p-3 rounded-lg hover:bg-gray-50 transition-colors"
+                  >
+                    <RadioGroupItem 
+                      value={index.toString()} 
+                      id={`option-${currentQuestion}-${index}`} 
+                      className="focus:ring-mathmate-300"
+                    />
+                    <Label 
+                      className="flex-1 cursor-pointer text-base" 
+                      htmlFor={`option-${currentQuestion}-${index}`}
+                    >
+                      {option}
+                    </Label>
                   </div>
                 ))}
               </RadioGroup>
@@ -211,16 +356,17 @@ const QuizZone = () => {
             <CardFooter className="flex justify-between">
               <Button 
                 variant="outline" 
-                onClick={prevQuestion} 
                 disabled={currentQuestion === 0}
+                onClick={prevQuestion}
               >
                 Previous
               </Button>
               <Button 
-                onClick={nextQuestion} 
                 className="bg-mathmate-300 hover:bg-mathmate-400 text-white"
+                onClick={nextQuestion}
+                disabled={selectedAnswers[currentQuestion] === -1}
               >
-                {currentQuestion === quizQuestions.length - 1 ? "Finish Quiz" : "Next"}
+                {currentQuestion === quizQuestions.length - 1 ? 'Finish' : 'Next'}
               </Button>
             </CardFooter>
           </Card>
@@ -232,7 +378,7 @@ const QuizZone = () => {
           <div className="text-center">
             <h1 className="text-3xl font-bold text-gray-900 dark:text-white mb-2">Quiz Results</h1>
             <p className="text-gray-600 dark:text-gray-300">
-              Great job completing the quiz!
+              Here's how you performed in your math quiz
             </p>
           </div>
 
@@ -258,28 +404,83 @@ const QuizZone = () => {
                 </div>
               </div>
 
-              <div className="space-y-4">
-                <h3 className="font-medium">Question Summary</h3>
-                {quizQuestions.map((question, index) => (
-                  <div key={index} className="flex items-start gap-3 py-2 border-b last:border-0">
-                    {selectedAnswers[index] === question.correctAnswer ? (
-                      <CheckCircle2 className="h-5 w-5 text-green-500 mt-0.5 flex-shrink-0" />
-                    ) : (
-                      <XCircle className="h-5 w-5 text-red-500 mt-0.5 flex-shrink-0" />
-                    )}
-                    <div>
-                      <p className="font-medium">{question.question}</p>
-                      <p className="text-sm text-gray-500 dark:text-gray-400">
-                        Correct: {question.options[question.correctAnswer]}
-                      </p>
-                      {selectedAnswers[index] !== question.correctAnswer && (
-                        <p className="text-sm text-red-500">
-                          You selected: {question.options[selectedAnswers[index]] || "No answer"}
-                        </p>
+              <div className="space-y-8 mt-8">
+                <div>
+                  <h3 className="font-medium text-xl flex items-center gap-2">
+                    <BarChart className="h-5 w-5" />
+                    Performance Analysis
+                  </h3>
+                  
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mt-6">
+                    <div className="space-y-4">
+                      <h4 className="font-medium text-green-600 flex items-center gap-2">
+                        <CheckCircle2 className="h-5 w-5" />
+                        Strengths
+                      </h4>
+                      {analysis.strengths.length > 0 ? (
+                        <ul className="list-disc list-inside space-y-2 bg-green-50 p-4 rounded-lg">
+                          {analysis.strengths.map((strength, index) => (
+                            <li key={index} className="text-green-700">{strength}</li>
+                          ))}
+                        </ul>
+                      ) : (
+                        <p className="text-gray-500 italic">No specific strengths identified</p>
+                      )}
+                    </div>
+
+                    <div className="space-y-4">
+                      <h4 className="font-medium text-red-600 flex items-center gap-2">
+                        <XCircle className="h-5 w-5" />
+                        Areas for Improvement
+                      </h4>
+                      {analysis.weaknesses.length > 0 ? (
+                        <ul className="list-disc list-inside space-y-2 bg-red-50 p-4 rounded-lg">
+                          {analysis.weaknesses.map((weakness, index) => (
+                            <li key={index} className="text-red-700">{weakness}</li>
+                          ))}
+                        </ul>
+                      ) : (
+                        <p className="text-gray-500 italic">No specific weaknesses identified</p>
                       )}
                     </div>
                   </div>
-                ))}
+
+                  <div className="mt-6">
+                    <h4 className="font-medium text-blue-600 flex items-center gap-2">
+                      <Award className="h-5 w-5" />
+                      Recommendations
+                    </h4>
+                    {analysis.recommendations.length > 0 ? (
+                      <ul className="list-decimal list-inside space-y-2 bg-blue-50 p-4 rounded-lg mt-2">
+                        {analysis.recommendations.map((rec, index) => (
+                          <li key={index} className="text-blue-700">{rec}</li>
+                        ))}
+                      </ul>
+                    ) : (
+                      <p className="text-gray-500 italic">No specific recommendations available</p>
+                    )}
+                  </div>
+
+                  <div className="mt-6">
+                    <h4 className="font-medium text-purple-600 flex items-center gap-2">
+                      <BarChart className="h-5 w-5" />
+                      Topic Performance
+                    </h4>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mt-4">
+                      {Object.entries(analysis.topicPerformance).map(([topic, percentage]) => (
+                        <div key={topic} className="flex items-center gap-2">
+                          <span className="capitalize flex-1">{topic}</span>
+                          <Progress 
+                            value={percentage} 
+                            className="h-2 w-24" 
+                            indicatorClassName={percentage > 70 ? 'bg-green-500' : percentage > 40 ? 'bg-yellow-500' : 'bg-red-500'}
+                          />
+                          <span className="text-sm">{percentage}%</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                </div>
               </div>
             </CardContent>
             <CardFooter className="flex flex-col sm:flex-row gap-4">
@@ -290,6 +491,8 @@ const QuizZone = () => {
                   setStage('selection');
                   setCurrentQuestion(0);
                   setSelectedAnswers([]);
+                  setQuizQuestions([]);
+                  setAnalysis({ strengths: [], weaknesses: [], recommendations: [], topicPerformance: {} });
                 }}
               >
                 Try Another Quiz
@@ -300,6 +503,7 @@ const QuizZone = () => {
                   setStage('quiz');
                   setCurrentQuestion(0);
                   setSelectedAnswers(new Array(quizQuestions.length).fill(-1));
+                  setTimeRemaining(300);
                 }}
               >
                 Retry This Quiz
