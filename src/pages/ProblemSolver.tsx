@@ -1,4 +1,4 @@
-import { useState, useRef } from "react";
+import { useState, useRef, useEffect } from "react";
 import { MathLayout } from "@/components/MathLayout";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -9,12 +9,33 @@ import { Mic, Image, ScanLine, Pencil, Share2, BrainCircuit, Clock, TrendingUp, 
 import { toast } from "sonner";
 import { solveWithGroq, solveWithGroqVision, convertSpeechToText } from "@/utils/apiUtils";
 
+// Remove or comment out the CDN import
+// import "https://esm.run/mathlive";
+
+// Keep only one set of imports
+import 'mathlive';
+import '@cortex-js/compute-engine';
+import { MathfieldElement } from "mathlive";
+import type { VirtualKeyboardInterface } from "mathlive";
+
 type ChatMessage = {
   id: string;
   content: string;
   type: 'question' | 'answer';
   timestamp: Date;
 };
+
+// Remove duplicate imports here
+declare global {
+  namespace JSX {
+    interface IntrinsicElements {
+      'math-field': any;
+    }
+  }
+  interface Window {
+    mathVirtualKeyboard: VirtualKeyboardInterface & EventTarget;
+  }
+}
 
 const ProblemSolver = () => {
   const [showFollowUp, setShowFollowUp] = useState(false);
@@ -23,12 +44,14 @@ const ProblemSolver = () => {
   
   const [problem, setProblem] = useState("");
   const [solution, setSolution] = useState("");
-  const [isLoading, setIsLoading] = useState(false);
+  const [isLoading, setIsLoading] = useState(false);  // Fixed syntax error
   const [isRecording, setIsRecording] = useState(false);
+  const [showMathField, setShowMathField] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const audioChunksRef = useRef<Blob[]>([]);
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const mathFieldRef = useRef<MathfieldElement | null>(null);
   const [isDrawing, setIsDrawing] = useState(false);
 
   const recentProblems = [
@@ -38,18 +61,9 @@ const ProblemSolver = () => {
   ];
 
   const quickTips = [
-    {
-      icon: BrainCircuit,
-      text: "Use the quadratic formula for complex equations"
-    },
-    {
-      icon: Clock,
-      text: "Practice timing with our Mock Test feature"
-    },
-    {
-      icon: TrendingUp,
-      text: "Track your progress in different topics"
-    }
+    { icon: BrainCircuit, text: "Use the quadratic formula for complex equations" },
+    { icon: Clock, text: "Practice timing with our Mock Test feature" },
+    { icon: TrendingUp, text: "Track your progress in different topics" }
   ];
 
   const learningProgress = [
@@ -57,6 +71,30 @@ const ProblemSolver = () => {
     { subject: "Calculus", progress: 45 },
     { subject: "Geometry", progress: 60 }
   ];
+
+  // Initialize MathField when shown
+  useEffect(() => {
+    if (showMathField && mathFieldRef.current) {
+      // Configure MathField
+      mathFieldRef.current.mathVirtualKeyboardPolicy = "manual";
+      const showKeyboard = () => window.mathVirtualKeyboard.show();
+      const hideKeyboard = () => window.mathVirtualKeyboard.hide();
+
+      mathFieldRef.current.addEventListener("focusin", showKeyboard);
+      mathFieldRef.current.addEventListener("focusout", hideKeyboard);
+
+      // Sync initial value
+      mathFieldRef.current.value = problem;
+
+      // Cleanup on unmount or when hiding
+      return () => {
+        if (mathFieldRef.current) {
+          mathFieldRef.current.removeEventListener("focusin", showKeyboard);
+          mathFieldRef.current.removeEventListener("focusout", hideKeyboard);
+        }
+      };
+    }
+  }, [showMathField, problem]);
 
   const handleSolve = async () => {
     if (!problem.trim()) {
@@ -138,34 +176,31 @@ const ProblemSolver = () => {
   };
 
   const handleImageUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    if (!fileInputRef.current) return;
     const file = event.target.files?.[0];
     if (!file) return;
     
-    // Show loading toast
     const loadingToast = toast.loading("Processing image...");
     setIsLoading(true);
     setSolution("");
     
     try {
-      // Validate file type and size
       if (!file.type.startsWith('image/')) {
         toast.error("Please upload an image file");
         return;
       }
       
-      if (file.size > 10 * 1024 * 1024) { // 10MB limit
+      if (file.size > 10 * 1024 * 1024) {
         toast.error("Image too large. Please upload an image smaller than 10MB");
         return;
       }
       
-      // Read the file as base64
       const reader = new FileReader();
       reader.onloadend = async () => {
         try {
           const base64String = (reader.result as string);
           const base64data = base64String.split(",")[1];
           
-          // Process the image
           const solutionText = await solveWithGroqVision(base64data);
           
           if (solutionText.includes("error") || solutionText.includes("sorry")) {
@@ -196,6 +231,7 @@ const ProblemSolver = () => {
   };
 
   const initCanvas = () => {
+    if (!canvasRef.current) return;
     const canvas = canvasRef.current;
     if (!canvas) return;
     
@@ -320,20 +356,26 @@ const ProblemSolver = () => {
     }
   };
 
-  // Enhanced formula rendering with better highlighting
+  const handleKeyboardClick = () => {
+    setShowMathField(!showMathField);
+    if (!showMathField) {
+      setTimeout(() => {
+        if (mathFieldRef.current) {
+          mathFieldRef.current.focus();
+        }
+      }, 100);
+    }
+  };
+
   const renderFormula = (text: string) => {
-    // Match mathematical expressions: x^2, f(x), etc.
     const formulaText = text
-      // Replace mathematical expressions with highlighted span
       .replace(/\b([a-z][a-z0-9]*\([a-z0-9,\s]+\))|(\b[a-z][0-9]*[\^]?[0-9]*)(?=\s*[\+\-\*\/\=]|\s*$)/gi, '<span class="text-blue-600 dark:text-blue-400 font-medium">$&</span>')
-      // Replace equations and formulas in $ delimiters
       .replace(/\$([^$]+)\$/g, '<span class="math-formula">$1</span>');
     
     return formulaText;
   };
 
   const parseSteps = (text: string) => {
-    // Try to identify formulas within the text
     const hasFormulas = text.includes('$') || 
                       /\b([a-z][a-z0-9]*\([a-z0-9,\s]+\))|(\b[a-z][0-9]*[\^]?[0-9]*)(?=\s*[\+\-\*\/\=]|\s*$)/gi.test(text);
     
@@ -388,7 +430,6 @@ const ProblemSolver = () => {
   };
 
   const renderSolutionContent = (content: string) => {
-    // Remove markdown bold syntax
     const cleanContent = content.replace(/\*\*([^*]+)\*\*/g, '$1');
     const steps = parseSteps(cleanContent);
     
@@ -428,7 +469,6 @@ const ProblemSolver = () => {
   };
 
   const renderChatMessageContent = (content: string) => {
-    // Remove markdown bold syntax
     const cleanContent = content.replace(/\*\*([^*]+)\*\*/g, '$1');
     const steps = parseSteps(cleanContent);
     
@@ -499,12 +539,29 @@ const ProblemSolver = () => {
                 </div>
               ) : (
                 <>
-                  <Textarea
-                    value={problem}
-                    onChange={(e) => setProblem(e.target.value)}
-                    placeholder="Type or paste your math problem here..."
-                    className="w-full min-h-[120px] md:min-h-[200px] p-3 md:p-4 mb-4 border rounded-lg resize-none focus:outline-none focus:ring-2 focus:ring-mathmate-300"
-                  />
+                  {showMathField ? (
+                    <math-field
+                      ref={mathFieldRef}
+                      onInput={(evt) => setProblem((evt.target as MathfieldElement).value)}
+                      style={{
+                        width: '100%',
+                        minHeight: '120px',
+                        padding: '12px',
+                        border: '1px solid #d1d5db',
+                        borderRadius: '8px',
+                        fontSize: '16px'
+                      }}
+                    >
+                      {problem}
+                    </math-field>
+                  ) : (
+                    <Textarea
+                      value={problem}
+                      onChange={(e) => setProblem(e.target.value)}
+                      placeholder="Type or paste your math problem here..."
+                      className="w-full min-h-[120px] md:min-h-[200px] p-3 md:p-4 mb-4 border rounded-lg resize-none focus:outline-none focus:ring-2 focus:ring-mathmate-300"
+                    />
+                  )}
 
                   <div className="flex flex-wrap gap-2 md:gap-3 justify-center sm:justify-between">
                     <div className="flex flex-wrap gap-2 md:gap-3">
@@ -533,7 +590,12 @@ const ProblemSolver = () => {
                       <Button variant="outline" size="icon" className="h-9 w-9 md:h-10 md:w-10" onClick={handleShare}>
                         <Share2 className="h-4 w-4" />
                       </Button>
-                      <Button variant="outline" size="icon" className="h-9 w-9 md:h-10 md:w-10" onClick={() => document.querySelector('textarea')?.focus()}>
+                      <Button 
+                        variant="outline" 
+                        size="icon" 
+                        className={`h-9 w-9 md:h-10 md:w-10 ${showMathField ? 'bg-blue-100' : ''}`}
+                        onClick={handleKeyboardClick}
+                      >
                         <Keyboard className="h-4 w-4" />
                       </Button>
                     </div>
@@ -545,7 +607,6 @@ const ProblemSolver = () => {
                       {isLoading ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
                       Solve
                     </Button>
-    
                   </div>
 
                   <input
