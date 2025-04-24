@@ -8,15 +8,14 @@ import { Input } from "@/components/ui/input";
 import { Mic, Image, ScanLine, Pencil, Share2, BrainCircuit, Clock, TrendingUp, Loader2, ArrowRight, BookOpen, ChevronRight, AlertTriangle, Keyboard } from "lucide-react";
 import { toast } from "sonner";
 import { solveWithGroq, solveWithGroqVision, convertSpeechToText } from "@/utils/apiUtils";
-
-// Remove or comment out the CDN import
-// import "https://esm.run/mathlive";
-
-// Keep only one set of imports
+import { InlineMath, BlockMath } from 'react-katex';
+import 'katex/dist/katex.min.css';
 import 'mathlive';
 import '@cortex-js/compute-engine';
 import { MathfieldElement } from "mathlive";
 import type { VirtualKeyboardInterface } from "mathlive";
+import DesmosCalculator from "@/components/DesmosCalculator";
+import Desmos3DCalculator from "@/components/Desmos3DCalculator";
 
 type ChatMessage = {
   id: string;
@@ -25,7 +24,12 @@ type ChatMessage = {
   timestamp: Date;
 };
 
-// Remove duplicate imports here
+type Step = {
+  number: string;
+  content: string;
+  hasFormula?: boolean;
+};
+
 declare global {
   namespace JSX {
     interface IntrinsicElements {
@@ -41,10 +45,9 @@ const ProblemSolver = () => {
   const [showFollowUp, setShowFollowUp] = useState(false);
   const [followUpQuestion, setFollowUpQuestion] = useState("");
   const [chatHistory, setChatHistory] = useState<ChatMessage[]>([]);
-  
   const [problem, setProblem] = useState("");
   const [solution, setSolution] = useState("");
-  const [isLoading, setIsLoading] = useState(false);  // Fixed syntax error
+  const [isLoading, setIsLoading] = useState(false);
   const [isRecording, setIsRecording] = useState(false);
   const [showMathField, setShowMathField] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -66,6 +69,36 @@ const ProblemSolver = () => {
     { icon: TrendingUp, text: "Track your progress in different topics" }
   ];
 
+  const [showGraph, setShowGraph] = useState(false);
+  const [is3D, setIs3D] = useState(false);
+  const extractEquation = (text: string): string | null => {
+    // Match common equation patterns
+    const patterns = [
+      /f\(x\)\s*=\s*([^,;]+)/i,  // f(x) = ...
+      /y\s*=\s*([^,;]+)/i,       // y = ...
+      /z\s*=\s*([^,;]+)/i,       // z = ...
+      /equation[:\s]+([^,;]+)/i,  // equation: ...
+      /=\s*([^,;]+)/             // = ...
+    ];
+
+    for (const pattern of patterns) {
+      const match = text.match(pattern);
+      if (match) {
+        return match[1].trim();
+      }
+    }
+    return null;
+  };
+
+  // Modify the handleGraphClick function
+  const handleGraphClick = () => {
+    const equation = extractEquation(problem);
+    if (!equation) {
+      toast.error("No equation found in the problem");
+      return;
+    }
+    setShowGraph(true);
+  };
   const learningProgress = [
     { subject: "Algebra", progress: 75 },
     { subject: "Calculus", progress: 45 },
@@ -75,7 +108,6 @@ const ProblemSolver = () => {
   // Initialize MathField when shown
   useEffect(() => {
     if (showMathField && mathFieldRef.current) {
-      // Configure MathField
       mathFieldRef.current.mathVirtualKeyboardPolicy = "manual";
       const showKeyboard = () => window.mathVirtualKeyboard.show();
       const hideKeyboard = () => window.mathVirtualKeyboard.hide();
@@ -83,10 +115,8 @@ const ProblemSolver = () => {
       mathFieldRef.current.addEventListener("focusin", showKeyboard);
       mathFieldRef.current.addEventListener("focusout", hideKeyboard);
 
-      // Sync initial value
       mathFieldRef.current.value = problem;
 
-      // Cleanup on unmount or when hiding
       return () => {
         if (mathFieldRef.current) {
           mathFieldRef.current.removeEventListener("focusin", showKeyboard);
@@ -101,10 +131,10 @@ const ProblemSolver = () => {
       toast.error("Please enter a problem first");
       return;
     }
-    
+
     setIsLoading(true);
     setSolution("");
-    
+
     try {
       const solutionText = await solveWithGroq(problem);
       setSolution(solutionText);
@@ -123,27 +153,27 @@ const ProblemSolver = () => {
       }
       return;
     }
-    
+
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       setIsRecording(true);
-      
+
       const mediaRecorder = new MediaRecorder(stream);
       mediaRecorderRef.current = mediaRecorder;
       audioChunksRef.current = [];
-      
+
       mediaRecorder.ondataavailable = (event) => {
         audioChunksRef.current.push(event.data);
       };
-      
+
       mediaRecorder.onstop = async () => {
         setIsRecording(false);
         setIsLoading(true);
-        
+
         try {
           const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/webm' });
           const spokenText = await convertSpeechToText(audioBlob);
-          
+
           if (spokenText) {
             setProblem(spokenText);
             const solutionText = await solveWithGroq(spokenText);
@@ -157,10 +187,10 @@ const ProblemSolver = () => {
         } finally {
           setIsLoading(false);
         }
-        
+
         stream.getTracks().forEach(track => track.stop());
       };
-      
+
       mediaRecorder.start();
       toast.info("Recording started... Speak your math problem");
     } catch (error) {
@@ -179,31 +209,30 @@ const ProblemSolver = () => {
     if (!fileInputRef.current) return;
     const file = event.target.files?.[0];
     if (!file) return;
-    
+
     const loadingToast = toast.loading("Processing image...");
     setIsLoading(true);
     setSolution("");
-    
+
     try {
       if (!file.type.startsWith('image/')) {
         toast.error("Please upload an image file");
         return;
       }
-      
       if (file.size > 10 * 1024 * 1024) {
         toast.error("Image too large. Please upload an image smaller than 10MB");
         return;
       }
-      
+
       const reader = new FileReader();
       reader.onloadend = async () => {
         try {
-          const base64String = (reader.result as string);
+          const base64String = reader.result as string;
           const base64data = base64String.split(",")[1];
-          
+
           const solutionText = await solveWithGroqVision(base64data);
-          
-          if (solutionText.includes("error") || solutionText.includes("sorry")) {
+
+          if (solutionText.toLowerCase().includes("error") || solutionText.toLowerCase().includes("sorry")) {
             toast.error("Failed to analyze the image. Please try with a clearer image.");
           } else {
             setSolution(solutionText);
@@ -215,11 +244,11 @@ const ProblemSolver = () => {
           toast.error("Failed to process the image. Please try again.");
         }
       };
-      
+
       reader.onerror = () => {
         toast.error("Failed to read the image file. Please try again.");
       };
-      
+
       reader.readAsDataURL(file);
     } catch (error) {
       toast.error("Failed to process image. Please try again.");
@@ -234,20 +263,20 @@ const ProblemSolver = () => {
     if (!canvasRef.current) return;
     const canvas = canvasRef.current;
     if (!canvas) return;
-    
+
     const ctx = canvas.getContext("2d");
     if (!ctx) return;
-    
+
     let isDrawing = false;
     let lastX = 0;
     let lastY = 0;
-    
+
     canvas.addEventListener("mousedown", (e) => {
       isDrawing = true;
       lastX = e.offsetX;
       lastY = e.offsetY;
     });
-    
+
     canvas.addEventListener("mousemove", (e) => {
       if (!isDrawing) return;
       ctx.beginPath();
@@ -257,11 +286,11 @@ const ProblemSolver = () => {
       lastX = e.offsetX;
       lastY = e.offsetY;
     });
-    
+
     canvas.addEventListener("mouseup", () => {
       isDrawing = false;
     });
-    
+
     canvas.addEventListener("mouseout", () => {
       isDrawing = false;
     });
@@ -278,25 +307,32 @@ const ProblemSolver = () => {
 
   const handleWhiteboardSubmit = async () => {
     if (!canvasRef.current) return;
-    
+
     setIsLoading(true);
     setSolution("");
-    
+
+    const loadingToast = toast.loading("Processing whiteboard...");
+
     try {
       const canvas = canvasRef.current;
       const base64data = canvas.toDataURL("image/png").split(",")[1];
-      
+
       const solutionText = await solveWithGroqVision(base64data);
-      setSolution(solutionText);
-      
-      setProblem("Whiteboard-based problem");
-      
-      setIsDrawing(false);
+
+      if (solutionText.toLowerCase().includes("error") || solutionText.toLowerCase().includes("sorry")) {
+        toast.error("Failed to analyze the whiteboard. Please try with a clearer drawing.");
+      } else {
+        setSolution(solutionText);
+        setProblem("Whiteboard-based problem");
+        setIsDrawing(false);
+        toast.success("Whiteboard processed successfully!");
+      }
     } catch (error) {
       toast.error("Failed to process whiteboard. Please try again.");
       console.error("Whiteboard processing error:", error);
     } finally {
       setIsLoading(false);
+      toast.dismiss(loadingToast);
     }
   };
 
@@ -305,7 +341,7 @@ const ProblemSolver = () => {
       toast.error("Solve a problem first before sharing");
       return;
     }
-    
+
     navigator.clipboard.writeText(`Problem: ${problem}\n\nSolution:\n${solution}`)
       .then(() => toast.success("Solution copied to clipboard"))
       .catch(() => toast.error("Failed to copy to clipboard"));
@@ -320,9 +356,9 @@ const ProblemSolver = () => {
       toast.error("Please enter a follow-up question");
       return;
     }
-    
+
     setIsLoading(true);
-    
+
     const questionId = Date.now().toString();
     const newQuestion: ChatMessage = {
       id: questionId,
@@ -330,23 +366,21 @@ const ProblemSolver = () => {
       type: 'question',
       timestamp: new Date()
     };
-    
+
     setChatHistory(prev => [...prev, newQuestion]);
-    
+
     try {
       const contextualQuestion = `Original problem: ${problem}\n\nPrevious solution: ${solution}\n\nFollow-up question: ${followUpQuestion}`;
-      
       const followUpSolution = await solveWithGroq(contextualQuestion);
-      
+
       const newAnswer: ChatMessage = {
         id: `${questionId}-answer`,
         content: followUpSolution,
         type: 'answer',
         timestamp: new Date()
       };
-      
+
       setChatHistory(prev => [...prev, newAnswer]);
-      
       setFollowUpQuestion("");
     } catch (error) {
       toast.error("Failed to process follow-up question. Please try again.");
@@ -367,84 +401,126 @@ const ProblemSolver = () => {
     }
   };
 
-  const renderFormula = (text: string) => {
-    const formulaText = text
-      .replace(/\b([a-z][a-z0-9]*\([a-z0-9,\s]+\))|(\b[a-z][0-9]*[\^]?[0-9]*)(?=\s*[\+\-\*\/\=]|\s*$)/gi, '<span class="text-blue-600 dark:text-blue-400 font-medium">$&</span>')
-      .replace(/\$([^$]+)\$/g, '<span class="math-formula">$1</span>');
-    
-    return formulaText;
-  };
-
-  const parseSteps = (text: string) => {
-    const hasFormulas = text.includes('$') || 
-                      /\b([a-z][a-z0-9]*\([a-z0-9,\s]+\))|(\b[a-z][0-9]*[\^]?[0-9]*)(?=\s*[\+\-\*\/\=]|\s*$)/gi.test(text);
-    
-    if (text.includes("Step") || text.includes("step")) {
-      const stepRegex = /Step\s*(\d+)[\s:-]+([^]*?)(?=Step\s*\d+[\s:-]+|$)/gi;
-      let steps = [];
-      let match;
-      
-      while ((match = stepRegex.exec(text)) !== null) {
-        steps.push({
-          number: match[1],
-          content: match[2].trim(),
-          hasFormula: hasFormulas
-        });
-      }
-      
-      if (steps.length > 0) {
-        return steps;
-      }
-    }
-    
-    const numberedBulletRegex = /(\d+)[.)][\s]+([^]*?)(?=\d+[.)][\s]+|$)/g;
-    let steps = [];
+  const parseSteps = (text: string): Step[] => {
+    const cleanText = text.replace(/\*\*([^*]+)\*\*/g, '$1').trim();
+    const stepRegex = /Step\s*(\d+)[\s:-]+([^]*?)(?=Step\s*\d+[\s:-]+|$)/gi;
+    let steps: Step[] = [];
     let match;
-    
-    while ((match = numberedBulletRegex.exec(text)) !== null) {
+
+    while ((match = stepRegex.exec(cleanText)) !== null) {
       steps.push({
         number: match[1],
         content: match[2].trim(),
-        hasFormula: hasFormulas
+        hasFormula: match[2].includes('$') || match[2].includes('\\') || /[a-zA-Z][0-9]*[\^]/.test(match[2])
       });
     }
-    
-    if (steps.length > 0) {
-      return steps;
+
+    if (steps.length === 0) {
+      const numberedRegex = /(\d+)[.)][\s]+([^]*?)(?=\d+[.)][\s]+|$)/g;
+      while ((match = numberedRegex.exec(cleanText)) !== null) {
+        steps.push({
+          number: match[1],
+          content: match[2].trim(),
+          hasFormula: match[2].includes('$') || match[2].includes('\\') || /[a-zA-Z][0-9]*[\^]/.test(match[2])
+        });
+      }
     }
-    
-    const paragraphs = text.split("\n\n").filter(p => p.trim().length > 0);
-    if (paragraphs.length > 1) {
-      return paragraphs.map((content, i) => ({
-        number: (i + 1).toString(),
-        content,
-        hasFormula: hasFormulas
-      }));
+
+    if (steps.length === 0) {
+      const paragraphs = cleanText.split(/\n{2,}/).filter(p => p.trim());
+      if (paragraphs.length > 1) {
+        steps = paragraphs.map((content, i) => ({
+          number: (i + 1).toString(),
+          content: content.trim(),
+          hasFormula: content.includes('$') || content.includes('\\') || /[a-zA-Z][0-9]*[\^]/.test(content)
+        }));
+      } else {
+        steps = [{
+          number: "1",
+          content: cleanText,
+          hasFormula: cleanText.includes('$') || cleanText.includes('\\') || /[a-zA-Z][0-9]*[\^]/.test(cleanText)
+        }];
+      }
     }
-    
-    return [{
-      number: "1",
-      content: text,
-      hasFormula: hasFormulas
-    }];
+
+    return steps;
+  };
+
+  const renderFormula = (text: string) => {
+    // Handle error messages as plain text
+    if (text.toLowerCase().includes("error") || text.toLowerCase().includes("sorry")) {
+      return text;
+    }
+
+    // Split text into parts: LaTeX (delimited by $ or $$) and plain text
+    const parts = text.split(/(\$\$[^$]+\$\$|\$[^\$]+\$)/g);
+    return parts.map((part, index) => {
+      // Block math: $$...$$
+      if (part.startsWith('$$') && part.endsWith('$$')) {
+        const mathContent = part.slice(2, -2).trim();
+        try {
+          return <BlockMath key={index}>{mathContent}</BlockMath>;
+        } catch (error) {
+          console.warn(`Invalid LaTeX in block math: ${mathContent}`, error);
+          return <span key={index} className="text-red-500">[Invalid LaTeX: {mathContent}]</span>;
+        }
+      }
+      // Inline math: $...$
+      if (part.startsWith('$') && part.endsWith('$')) {
+        const mathContent = part.slice(1, -1).trim();
+        try {
+          return <InlineMath key={index}>{mathContent}</InlineMath>;
+        } catch (error) {
+          console.warn(`Invalid LaTeX in inline math: ${mathContent}`, error);
+          return <span key={index} className="text-red-500">[Invalid LaTeX: {mathContent}]</span>;
+        }
+      }
+      // Plain text: Convert common math patterns to LaTeX
+      const processedText = part
+        .replace(/\b(\d+)\/(\d+)\b/g, '\\frac{$1}{$2}') // Fractions
+        .replace(/\b([a-zA-Z]+)\^(\d+)\b/g, '{$1}^{$2}') // Exponents
+        .replace(/\b([a-zA-Z])\s*\^\s*\{([^}]+)\}/g, '{$1}^{$2}') // Exponents with braces
+        .replace(/sqrt\((.*?)\)/g, '\\sqrt{$1}') // Square roots
+        .replace(/\b(sin|cos|tan|cot|sec|csc|log|ln|arcsin|arccos|arctan)\b/g, '\\$1') // Trig and log functions
+        .replace(/\bpi\b/g, '\\pi') // Pi
+        .replace(/\btheta\b/g, '\\theta') // Theta
+        .replace(/\bdelta\b/g, '\\Delta') // Delta
+        .replace(/\binfinity\b/g, '\\infty') // Infinity
+        .replace(/\*/g, '\\cdot ') // Multiplication
+        .replace(/([^\\])(sum|int|lim|prod)/g, '$1\\$2') // Sums, integrals, limits
+        .replace(/\b([a-zA-Z])\s*_\s*\{([^}]+)\}/g, '{$1}_{$2}') // Subscripts
+        .replace(/\b([a-zA-Z])\s*_\s*(\d+)/g, '{$1}_{$2}') // Subscripts with numbers
+        .replace(/\{([^}]+)\}\s*=\s*\{([^}]+)\}/g, '$1 = $2'); // Equations in braces
+
+      // Split processed text again in case new LaTeX was introduced
+      const subParts = processedText.split(/(\$[^\$]+\$)/g);
+      return subParts.map((subPart, subIndex) => {
+        if (subPart.startsWith('$') && subPart.endsWith('$')) {
+          const mathContent = subPart.slice(1, -1).trim();
+          try {
+            return <InlineMath key={`${index}-${subIndex}`}>{mathContent}</InlineMath>;
+          } catch (error) {
+            console.warn(`Invalid LaTeX in processed inline math: ${mathContent}`, error);
+            return <span key={`${index}-${subIndex}`} className="text-red-500">[Invalid LaTeX: {mathContent}]</span>;
+          }
+        }
+        return subPart;
+      });
+    });
   };
 
   const renderSolutionContent = (content: string) => {
     const cleanContent = content.replace(/\*\*([^*]+)\*\*/g, '$1');
     const steps = parseSteps(cleanContent);
-    
-    if (steps.length <= 1 && !cleanContent.includes("Step")) {
+
+    if (steps.length <= 1 && !cleanContent.toLowerCase().includes("step")) {
       return (
         <div className="pl-4 border-l-2 border-blue-200 dark:border-blue-800">
-          <div 
-            dangerouslySetInnerHTML={{ 
-              __html: renderFormula(cleanContent) 
-            }} 
-          />
+          {renderFormula(cleanContent)}
         </div>
       );
     }
-    
+
     return (
       <div className="space-y-4">
         {steps.map((step, index) => (
@@ -456,11 +532,7 @@ const ProblemSolver = () => {
               <h4 className="font-medium text-lg">Step {step.number}</h4>
             </div>
             <div className="pl-4 border-l-2 border-blue-200 dark:border-blue-800">
-              <div 
-                dangerouslySetInnerHTML={{ 
-                  __html: renderFormula(typeof step === 'string' ? step : step.content) 
-                }} 
-              />
+              {renderFormula(step.content)}
             </div>
           </div>
         ))}
@@ -471,19 +543,15 @@ const ProblemSolver = () => {
   const renderChatMessageContent = (content: string) => {
     const cleanContent = content.replace(/\*\*([^*]+)\*\*/g, '$1');
     const steps = parseSteps(cleanContent);
-    
-    if (steps.length <= 1 && !cleanContent.includes("Step")) {
+
+    if (steps.length <= 1 && !cleanContent.toLowerCase().includes("step")) {
       return (
         <div className="pl-3 border-l-2 border-blue-200 dark:border-blue-800">
-          <div 
-            dangerouslySetInnerHTML={{ 
-              __html: renderFormula(cleanContent) 
-            }} 
-          />
+          {renderFormula(cleanContent)}
         </div>
       );
     }
-    
+
     return (
       <div className="space-y-3">
         {steps.map((step, index) => (
@@ -495,11 +563,7 @@ const ProblemSolver = () => {
               <h4 className="font-medium text-sm">Step {step.number}</h4>
             </div>
             <div className="pl-3 border-l-2 border-blue-200 dark:border-blue-800">
-              <div 
-                dangerouslySetInnerHTML={{ 
-                  __html: renderFormula(typeof step === 'string' ? step : step.content) 
-                }} 
-              />
+              {renderFormula(step.content)}
             </div>
           </div>
         ))}
@@ -522,7 +586,7 @@ const ProblemSolver = () => {
             <Card className="p-4 md:p-6">
               {isDrawing ? (
                 <div className="space-y-4">
-                  <canvas 
+                  <canvas
                     ref={canvasRef}
                     width="600"
                     height="300"
@@ -565,10 +629,10 @@ const ProblemSolver = () => {
 
                   <div className="flex flex-wrap gap-2 md:gap-3 justify-center sm:justify-between">
                     <div className="flex flex-wrap gap-2 md:gap-3">
-                      <Button 
-                        variant="outline" 
-                        size="icon" 
-                        className={`h-9 w-9 md:h-10 md:w-10 ${isRecording ? 'bg-red-100' : ''}`} 
+                      <Button
+                        variant="outline"
+                        size="icon"
+                        className={`h-9 w-9 md:h-10 md:w-10 ${isRecording ? 'bg-red-100' : ''}`}
                         onClick={handleMicClick}
                       >
                         <Mic className={`h-4 w-4 ${isRecording ? 'text-red-500' : ''}`} />
@@ -579,9 +643,9 @@ const ProblemSolver = () => {
                       <Button variant="outline" size="icon" className="h-9 w-9 md:h-10 md:w-10">
                         <ScanLine className="h-4 w-4" />
                       </Button>
-                      <Button 
-                        variant="outline" 
-                        size="icon" 
+                      <Button
+                        variant="outline"
+                        size="icon"
                         className={`h-9 w-9 md:h-10 md:w-10 ${isDrawing ? 'bg-blue-100' : ''}`}
                         onClick={handleDrawClick}
                       >
@@ -590,18 +654,18 @@ const ProblemSolver = () => {
                       <Button variant="outline" size="icon" className="h-9 w-9 md:h-10 md:w-10" onClick={handleShare}>
                         <Share2 className="h-4 w-4" />
                       </Button>
-                      <Button 
-                        variant="outline" 
-                        size="icon" 
+                      <Button
+                        variant="outline"
+                        size="icon"
                         className={`h-9 w-9 md:h-10 md:w-10 ${showMathField ? 'bg-blue-100' : ''}`}
                         onClick={handleKeyboardClick}
                       >
                         <Keyboard className="h-4 w-4" />
                       </Button>
                     </div>
-                    <Button 
-                      onClick={handleSolve} 
-                      disabled={isLoading || !problem.trim()} 
+                    <Button
+                      onClick={handleSolve}
+                      disabled={isLoading || !problem.trim()}
                       className="px-6"
                     >
                       {isLoading ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
@@ -636,11 +700,11 @@ const ProblemSolver = () => {
                         </div>
                         <h3 className="text-base md:text-lg font-semibold break-words">Solution</h3>
                       </div>
-                      
+
                       <div className="whitespace-pre-line text-sm md:text-base break-words bg-gray-50 dark:bg-gray-800 p-4 rounded-lg">
                         {renderSolutionContent(solution)}
                       </div>
-                      
+
                       {chatHistory.length > 0 && (
                         <div className="mt-6 space-y-4 border-t pt-4">
                           <div className="flex items-center gap-2 mb-3">
@@ -649,15 +713,15 @@ const ProblemSolver = () => {
                             </div>
                             <h3 className="text-base md:text-lg font-semibold break-words">Follow-up Questions</h3>
                           </div>
-                          
+
                           <div className="space-y-6 max-h-[500px] overflow-y-auto pr-2 custom-scrollbar">
                             {chatHistory.map((message, index) => {
                               const isQuestion = message.type === 'question';
                               const isConsecutive = index > 0 && chatHistory[index - 1].type === message.type;
-                              
+
                               return (
-                                <div 
-                                  key={message.id} 
+                                <div
+                                  key={message.id}
                                   className={`flex ${isQuestion ? 'justify-end' : 'justify-start'} ${isConsecutive ? 'mt-2' : 'mt-6'}`}
                                 >
                                   {!isQuestion && !isConsecutive && (
@@ -665,13 +729,12 @@ const ProblemSolver = () => {
                                       <span className="text-xs font-medium">AI</span>
                                     </div>
                                   )}
-                                  
-                                  <div 
-                                    className={`max-w-[85%] rounded-2xl p-4 ${
-                                      isQuestion 
-                                        ? 'bg-indigo-600 text-white' 
-                                        : 'bg-gray-100 text-gray-900 dark:bg-gray-800 dark:text-gray-100'
-                                    } ${isQuestion && isConsecutive ? 'rounded-tr-sm' : ''} ${!isQuestion && isConsecutive ? 'rounded-tl-sm' : ''}`}
+
+                                  <div
+                                    className={`max-w-[85%] rounded-2xl p-4 ${isQuestion
+                                      ? 'bg-indigo-600 text-white'
+                                      : 'bg-gray-100 text-gray-900 dark:bg-gray-800 dark:text-gray-100'
+                                      } ${isQuestion && isConsecutive ? 'rounded-tr-sm' : ''} ${!isQuestion && isConsecutive ? 'rounded-tl-sm' : ''}`}
                                   >
                                     {isQuestion ? (
                                       <div className="whitespace-pre-line text-sm md:text-base break-words">
@@ -681,10 +744,10 @@ const ProblemSolver = () => {
                                       renderChatMessageContent(message.content)
                                     )}
                                     <div className={`text-xs ${isQuestion ? 'text-indigo-200' : 'text-gray-500 dark:text-gray-400'} mt-1 text-right`}>
-                                      {message.timestamp.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}
+                                      {message.timestamp.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                                     </div>
                                   </div>
-                                  
+
                                   {isQuestion && !isConsecutive && (
                                     <div className="w-8 h-8 rounded-full bg-indigo-100 text-indigo-600 flex items-center justify-center ml-2 flex-shrink-0">
                                       <span className="text-xs font-medium">You</span>
@@ -694,7 +757,7 @@ const ProblemSolver = () => {
                               );
                             })}
                           </div>
-                          
+
                           {isLoading && (
                             <div className="flex justify-start mt-4">
                               <div className="bg-gray-100 dark:bg-gray-800 rounded-2xl p-3 flex items-center">
@@ -709,7 +772,48 @@ const ProblemSolver = () => {
                           )}
                         </div>
                       )}
-                      
+                      {showGraph && (
+  <Card className="p-4 md:p-6">
+    <div className="space-y-4">
+      <div className="flex items-center justify-between">
+        <h3 className="text-lg font-semibold">Graph Visualization</h3>
+        <div className="flex gap-2">
+          <Button
+            variant={is3D ? "outline" : "default"}
+            onClick={() => setIs3D(false)}
+            className="w-20"
+          >
+            2D
+          </Button>
+          <Button
+            variant={is3D ? "default" : "outline"}
+            onClick={() => setIs3D(true)}
+            className="w-20"
+          >
+            3D
+          </Button>
+          <Button
+            variant="outline"
+            onClick={() => setShowGraph(false)}
+            className="ml-2"
+          >
+            Close
+          </Button>
+        </div>
+      </div>
+      
+      {is3D ? (
+        <Desmos3DCalculator equation={extractEquation(problem) || ''} />
+      ) : (
+        <DesmosCalculator
+          equation={extractEquation(problem) || ''}
+          domain={{ min: -10, max: 10 }}
+          range={{ min: -10, max: 10 }}
+        />
+      )}
+    </div>
+  </Card>
+)}
                       {(showFollowUp || chatHistory.length > 0) ? (
                         <div className="pt-4 space-y-3">
                           <div className="relative flex items-center bg-white dark:bg-gray-950 border border-gray-300 dark:border-gray-700 rounded-full overflow-hidden shadow-sm focus-within:ring-2 focus-within:ring-indigo-500 focus-within:border-indigo-500">
@@ -725,7 +829,7 @@ const ProblemSolver = () => {
                                 }
                               }}
                             />
-                            <Button 
+                            <Button
                               className="absolute right-1 rounded-full h-10 w-10 p-0 bg-indigo-600 hover:bg-indigo-700 transition-colors"
                               onClick={handleFollowUpSubmit}
                               disabled={!followUpQuestion.trim() || isLoading}
@@ -743,16 +847,15 @@ const ProblemSolver = () => {
                         </div>
                       ) : (
                         <div className="flex flex-wrap gap-3 pt-4">
-                          <Button 
+                          <Button
                             className="bg-blue-600 hover:bg-blue-700 text-white transition-colors shadow-sm"
-                            onClick={() => {
-                              toast.info("Graph visualization feature coming soon!");
-                            }}
+                            onClick={handleGraphClick}
                           >
                             Visualize Graph
                           </Button>
-                          <Button 
-                            variant="outline" 
+                          
+                          <Button
+                            variant="outline"
                             className="border-blue-600 text-blue-600 hover:bg-blue-50 transition-colors"
                             onClick={() => setShowFollowUp(true)}
                           >
@@ -772,9 +875,9 @@ const ProblemSolver = () => {
               <h3 className="font-semibold text-base md:text-lg mb-4 break-words">Recent Problems</h3>
               <div className="space-y-2 md:space-y-3">
                 {recentProblems.map((problem, index) => (
-                  <Button 
-                    key={index} 
-                    variant="outline" 
+                  <Button
+                    key={index}
+                    variant="outline"
                     className="w-full justify-start text-left h-auto py-2 text-sm md:text-base break-words overflow-hidden text-ellipsis"
                     onClick={() => handleRecentProblemClick(problem)}
                   >
@@ -797,6 +900,7 @@ const ProblemSolver = () => {
                 ))}
               </div>
             </Card>
+
 
             <Card className="p-4 md:p-6">
               <h3 className="font-semibold text-base md:text-lg mb-4 break-words">Learning Progress</h3>

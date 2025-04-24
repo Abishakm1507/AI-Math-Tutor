@@ -185,7 +185,6 @@ const Dashboard = () => {
                 { name: "Mock Test", icon: ClipboardCheck, path: "/mock-test", color: "from-yellow-400 to-orange-400" },
                 { name: "Math Visualizer", icon: LineChart, path: "/visualizer", color: "from-purple-400 to-purple-500" },
                 { name: "Math World (VR)", icon: Box, path: "/math-world", color: "from-red-400 to-red-500" },
-                { name: "PDF Analyzer", icon: FileText, path: "/pdf-analyzer", color: "from-indigo-400 to-indigo-500" },
                 { name: "Fun Zone", icon: Gamepad2, path: "/fun-zone", color: "from-pink-400 to-pink-500" },
                 { name: "Settings", icon: Settings, path: "/settings", color: "from-gray-400 to-gray-500" },
               ].map((feature, index) => (

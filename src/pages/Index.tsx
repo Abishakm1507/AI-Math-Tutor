@@ -110,11 +110,6 @@ const Index = () => {
               description="Explore mathematical concepts in virtual reality."
               icon={Box}
             />
-            <FeatureCard 
-              title="PDF Analyzer" 
-              description="Upload study materials for instant explanations."
-              icon={FileText}
-            />
           </div>
         </div>
       </section>

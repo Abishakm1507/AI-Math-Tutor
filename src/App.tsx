@@ -5,6 +5,7 @@ import { Toaster as Sonner } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { ThemeProvider } from "@/hooks/use-theme";
 import { ProfileProvider } from "@/contexts/profile-context";
+import 'katex/dist/katex.min.css';
 
 // Pages
 import Index from "./pages/Index";
@@ -18,7 +19,6 @@ import Visualizer from "./pages/Visualizer";
 import MathWorld from "./pages/MathWorld";
 import FunZone from "./pages/FunZone";
 import NotFound from "./pages/NotFound";
-import PdfAnalyze from "./pages/PdfAnalyze";
 import Settings from "./pages/Settings";
 
 const queryClient = new QueryClient();
@@ -41,7 +41,6 @@ const App = () => (
               <Route path="/mock-test" element={<MockTest />} />
               <Route path="/visualizer" element={<Visualizer />} />
               <Route path="/math-world" element={<MathWorld />} />
-              <Route path="/pdf-analyzer" element={<PdfAnalyze />} />
               <Route path="/fun-zone" element={<FunZone />} />
               <Route path="/settings" element={<Settings />} />
               <Route path="*" element={<NotFound />} />

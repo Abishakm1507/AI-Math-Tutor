@@ -21,7 +21,6 @@ export function AppSidebar() {
     { name: "Mock Test", icon: TestTube, path: "/mock-test" },
     { name: "Math Visualizer", icon: LineChart, path: "/visualizer" },
     { name: "Math World (VR)", icon: Box, path: "/math-world" },
-    { name: "PDF Analyzer", icon: FileText, path: "/pdf-analyzer" },
     { name: "Fun Zone", icon: Gamepad2, path: "/fun-zone" },
     { name: "Settings", icon: Settings, path: "/settings" },
   ];
