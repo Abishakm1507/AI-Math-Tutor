@@ -16,6 +16,7 @@ import confetti from 'canvas-confetti';
 import PatternPuzzle from "@/components/games/PatternPuzzle";
 import MathMemory from "@/components/games/MathMemory";
 import { RefreshCw } from "lucide-react";
+import { ProgressManager } from "@/utils/progress-manager";
 
 const GROK_API_KEY = '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';
 
@@ -46,38 +47,45 @@ export default function FunZone() {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          model: "llama3-8b-8192", // Updated model
+          model: "llama3-8b-8192",
           messages: [{
             role: "user",
-            content: "Generate a random interesting math fact. Respond in this exact JSON format: {\"fact\": \"your fact here\", \"explanation\": \"your explanation here\"}"
+            content: "Generate a random interesting math fact. Respond in this exact JSON format: {\"fact\": \"your fact here\", \"explanation\": \"your explanation here\"}. Do not include any text outside the JSON object."
           }],
           temperature: 0.7,
           max_tokens: 250,
           stream: false
         })
       });
-
+  
       if (!response.ok) {
         const errorData = await response.text();
         console.error('API Error Response:', errorData);
         throw new Error(`HTTP error! status: ${response.status}`);
       }
-
+  
       const data = await response.json();
-      console.log('API Response:', data); // For debugging
-
-      let content;
-      try {
-        content = JSON.parse(data.choices[0].message.content);
-      } catch (parseError) {
-        console.error('Parse error:', data.choices[0].message.content);
-        throw new Error('Invalid response format');
+      console.log('API Response:', data);
+  
+      let content = data.choices[0].message.content;
+      // Extract JSON object from the response using regex
+      const jsonMatch = content.match(/{[\s\S]*}/);
+      if (!jsonMatch) {
+        throw new Error('No valid JSON found in response');
       }
-
+  
+      let parsedContent;
+      try {
+        parsedContent = JSON.parse(jsonMatch[0]);
+      } catch (parseError) {
+        console.error('Parse error:', content);
+        throw new Error('Invalid JSON format');
+      }
+  
       setFunFact({
         title: 'Daily Math Fun Fact',
-        fact: content.fact,
-        explanation: content.explanation
+        fact: parsedContent.fact,
+        explanation: parsedContent.explanation
       });
     } catch (error) {
       console.error('Error fetching fact from Groq API:', error);
@@ -102,7 +110,22 @@ export default function FunZone() {
   }, []); // Empty dependency array means this runs once on mount
 
   const handleGameEnd = (points: number) => {
-    setGameScore(Math.floor(points / 1.5));
+    const gameScore = Math.floor(points / 1.5);
+    setGameScore(gameScore);
+    
+    // Update progress with game activity using addActivity
+    ProgressManager.addActivity({
+      type: 'game',
+      title: `Completed ${activeGame}`,
+      score: `${gameScore} points`
+    });
+    
+    // Calculate and update XP points
+    const xpEarned = Math.floor(gameScore * 2);
+    setXpPoints(xpEarned);
+    
+    // Update progress with earned XP
+    ProgressManager.addXP(xpEarned);
 
     // Multiple confetti bursts
     const duration = 3000;

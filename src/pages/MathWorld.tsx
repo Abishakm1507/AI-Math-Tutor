@@ -3,8 +3,31 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { MathLayout } from "@/components/MathLayout";
 import { ArrowRight, Book, Brain, Presentation } from "lucide-react";
+import { useState } from "react";
 
 export default function MathWorld() {
+  const [showVR, setShowVR] = useState(false);
+
+  const handleEnterVR = () => {
+    setShowVR(true);
+  };
+
+  if (showVR) {
+    return (
+      <div className="h-screen w-screen">
+        <iframe 
+          name="mathvr" 
+          src="https://framevr.io/mathvr" 
+          height="100%" 
+          width="100%" 
+          allow="camera;microphone;display-capture;xr-spatial-tracking" 
+          scrolling="no" 
+          frameBorder="0"
+        />
+      </div>
+    );
+  }
+
   return (
     <MathLayout>
       <div className="space-y-8">
@@ -19,7 +42,11 @@ export default function MathWorld() {
             <h1 className="text-4xl font-bold mb-2 break-words">Math World VR</h1>
             <p className="text-lg max-w-2xl break-words">Experience mathematics in virtual reality like never before</p>
             
-            <Button className="mt-6 flex items-center gap-2" size="lg">
+            <Button 
+              className="mt-6 flex items-center gap-2" 
+              size="lg"
+              onClick={handleEnterVR}
+            >
               <span className="break-words">Enter VR World</span>
               <ArrowRight className="h-4 w-4 flex-shrink-0" />
             </Button>

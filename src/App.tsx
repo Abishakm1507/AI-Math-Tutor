@@ -20,6 +20,8 @@ import MathWorld from "./pages/MathWorld";
 import FunZone from "./pages/FunZone";
 import NotFound from "./pages/NotFound";
 import Settings from "./pages/Settings";
+import VerifyEmail from "./pages/VerifyEmail";
+import CompleteProfile from "./pages/CompleteProfile";
 
 const queryClient = new QueryClient();
 
@@ -43,6 +45,8 @@ const App = () => (
               <Route path="/math-world" element={<MathWorld />} />
               <Route path="/fun-zone" element={<FunZone />} />
               <Route path="/settings" element={<Settings />} />
+              <Route path="/verify-email" element={<VerifyEmail />} />
+              <Route path="/complete-profile" element={<CompleteProfile />} />
               <Route path="*" element={<NotFound />} />
             </Routes>
           </BrowserRouter>

@@ -16,6 +16,7 @@ import { MathfieldElement } from "mathlive";
 import type { VirtualKeyboardInterface } from "mathlive";
 import DesmosCalculator from "@/components/DesmosCalculator";
 import Desmos3DCalculator from "@/components/Desmos3DCalculator";
+import { ProgressManager } from "@/utils/progress-manager";
 
 type ChatMessage = {
   id: string;
@@ -59,8 +60,8 @@ const ProblemSolver = () => {
 
   const recentProblems = [
     "Find the derivative of f(x) = x² + 2x",
-    "Solve the system of equations",
-    "Calculate the area under the curve"
+    "Solve 2x + 6 = 10",
+    "Find the integration of y = sin x + cos y"
   ];
 
   const quickTips = [
@@ -126,18 +127,20 @@ const ProblemSolver = () => {
     }
   }, [showMathField, problem]);
 
+  // After successfully solving a problem
   const handleSolve = async () => {
     if (!problem.trim()) {
       toast.error("Please enter a problem first");
       return;
     }
-
+  
     setIsLoading(true);
     setSolution("");
-
+  
     try {
       const solutionText = await solveWithGroq(problem);
       setSolution(solutionText);
+      ProgressManager.updateProblemsSolved(); // Update progress after successful solution
     } catch (error) {
       toast.error("Failed to solve the problem. Please try again.");
       console.error("Error solving problem:", error);
@@ -872,7 +875,7 @@ const ProblemSolver = () => {
 
           <div className="lg:col-span-1 space-y-4 md:space-y-6">
             <Card className="p-4 md:p-6">
-              <h3 className="font-semibold text-base md:text-lg mb-4 break-words">Recent Problems</h3>
+              <h3 className="font-semibold text-base md:text-lg mb-4 break-words">Sample Problems</h3>
               <div className="space-y-2 md:space-y-3">
                 {recentProblems.map((problem, index) => (
                   <Button
