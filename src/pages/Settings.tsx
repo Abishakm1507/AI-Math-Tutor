@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { AppSidebar } from "@/components/AppSidebar";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
@@ -18,12 +18,14 @@ import {
   User, Mail, Lock, Bell, Eye, EyeOff, Upload, Trash2, 
   Shield, CreditCard, Globe, BookOpen, BarChart4, Award
 } from "lucide-react";
+import { ProgressManager } from "@/utils/progress-manager";
 
 export default function Settings() {
   const [showPassword, setShowPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const { profile, loading, updateProfile } = useProfile();
   const { toast } = useToast();
+  const [userProgress, setUserProgress] = useState(ProgressManager.getProgress());
   
   // Form state
   const [name, setName] = useState(profile?.full_name || "");
@@ -31,13 +33,29 @@ export default function Settings() {
   const [educationLevel, setEducationLevel] = useState(profile?.education_level || "");
 
   // Update form state when profile data loads
-  useState(() => {
+  useEffect(() => {
     if (profile) {
       setName(profile.full_name || "");
       setAge(profile.age?.toString() || "");
       setEducationLevel(profile.education_level || "");
     }
-  });
+  }, [profile]);
+
+  // Add useEffect for progress tracking
+  useEffect(() => {
+    const progress = ProgressManager.updateStreak();
+    setUserProgress(progress);
+
+    const handleVisibilityChange = () => {
+      if (!document.hidden) {
+        const progress = ProgressManager.getProgress();
+        setUserProgress(progress);
+      }
+    };
+
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    return () => document.removeEventListener('visibilitychange', handleVisibilityChange);
+  }, []);
 
   // Mock save function
   const handleSave = async (section: string) => {
@@ -79,18 +97,6 @@ export default function Settings() {
         });
       }, 1000);
     }
-  };
-
-  // Mock user data for achievements section
-  const mockUserData = {
-    level: 3,
-    xp: 350,
-    nextLevelXp: 500,
-    badges: [
-      { name: "Quick Learner" },
-      { name: "Problem Solver" },
-      { name: "Math Genius" }
-    ]
   };
 
   return (
@@ -292,16 +298,16 @@ export default function Settings() {
                   <CardContent className="space-y-6">
                     <div className="space-y-2">
                       <div className="flex items-center justify-between">
-                        <Label>Level {mockUserData.level}</Label>
-                        <span className="text-sm text-gray-500">{mockUserData.xp} / {mockUserData.nextLevelXp} XP</span>
+                        <Label>Level {userProgress.level}</Label>
+                        <span className="text-sm text-gray-500">{userProgress.xp} / {userProgress.totalXp} XP</span>
                       </div>
-                      <Progress value={(mockUserData.xp / mockUserData.nextLevelXp) * 100} className="h-2" />
+                      <Progress value={(userProgress.xp / userProgress.totalXp) * 100} className="h-2" />
                     </div>
                     
                     <div className="space-y-2">
                       <Label>Badges</Label>
                       <div className="flex flex-wrap gap-2">
-                        {mockUserData.badges.map((badge, index) => (
+                        {userProgress.achievements.filter(a => a.earned).map((badge, index) => (
                           <Badge key={index} variant="outline" className="py-1.5">
                             <Award className="h-3.5 w-3.5 mr-1.5" />
                             {badge.name}
@@ -314,20 +320,22 @@ export default function Settings() {
                       <Label>Statistics</Label>
                       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
                         <div className="p-3 border rounded-md text-center">
-                          <p className="text-2xl font-bold text-mathmate-500">42</p>
+                          <p className="text-2xl font-bold text-mathmate-500">{userProgress.problemsSolved}</p>
                           <p className="text-sm text-gray-500">Problems Solved</p>
                         </div>
                         <div className="p-3 border rounded-md text-center">
-                          <p className="text-2xl font-bold text-mathmate-500">8</p>
+                          <p className="text-2xl font-bold text-mathmate-500">{userProgress.quizzesPassed}</p>
                           <p className="text-sm text-gray-500">Quizzes Completed</p>
                         </div>
                         <div className="p-3 border rounded-md text-center">
-                          <p className="text-2xl font-bold text-mathmate-500">3</p>
-                          <p className="text-sm text-gray-500">Mock Tests Taken</p>
+                          <p className="text-2xl font-bold text-mathmate-500">{userProgress.streak}</p>
+                          <p className="text-sm text-gray-500">Day Streak</p>
                         </div>
                         <div className="p-3 border rounded-md text-center">
-                          <p className="text-2xl font-bold text-mathmate-500">85%</p>
-                          <p className="text-sm text-gray-500">Average Score</p>
+                          <p className="text-2xl font-bold text-mathmate-500">
+                            {Math.round((userProgress.problemsSolved / userProgress.totalProblems) * 100)}%
+                          </p>
+                          <p className="text-sm text-gray-500">Completion Rate</p>
                         </div>
                       </div>
                     </div>
