@@ -1,46 +1,34 @@
-import { useEffect } from "react";
-import { useNavigate } from "react-router-dom";
-import { supabase } from "@/integrations/supabase/client";
-import { useToast } from "@/components/ui/use-toast";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Mail } from "lucide-react";
+import Navbar from "@/components/Navbar";
+import Footer from "@/components/Footer";
 
-const VerifyEmail = () => {
-  const navigate = useNavigate();
-  const { toast } = useToast();
-
-  useEffect(() => {
-    const checkVerification = async () => {
-      const { data: { session }, error } = await supabase.auth.getSession();
-      if (error) {
-        toast({
-          variant: "destructive",
-          title: "Verification check failed",
-          description: error.message,
-        });
-        return;
-      }
-      if (session) {
-        navigate("/complete-profile");
-      }
-    };
-
-    checkVerification();
-    const { data: authListener } = supabase.auth.onAuthStateChange((event, session) => {
-      if (event === "SIGNED_IN" && session) {
-        navigate("/complete-profile");
-      }
-    });
-
-    return () => {
-      authListener.subscription.unsubscribe();
-    };
-  }, [navigate, toast]);
-
+export default function VerifyEmail() {
   return (
-    <div>
-      <h1>Verify Your Email</h1>
-      <p>Please check your inbox and verify your email to continue.</p>
+    <div className="min-h-screen flex flex-col">
+      <Navbar />
+      
+      <div className="flex-1 flex items-center justify-center bg-gray-50 dark:bg-gray-900 py-12 px-4 sm:px-6 lg:px-8">
+        <Card className="w-full max-w-md">
+          <CardHeader>
+            <div className="mx-auto w-12 h-12 bg-mathmate-100 rounded-full flex items-center justify-center mb-4">
+              <Mail className="h-6 w-6 text-mathmate-500" />
+            </div>
+            <CardTitle className="text-center">Verify your email</CardTitle>
+            <CardDescription className="text-center">
+              We've sent you an email verification link
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="text-center">
+            <p className="text-sm text-gray-600 dark:text-gray-400">
+              Please check your email and click the verification link to complete your registration.
+              Once verified, you can log in to your account.
+            </p>
+          </CardContent>
+        </Card>
+      </div>
+      
+      <Footer />
     </div>
   );
-};
-
-export default VerifyEmail;
+}
