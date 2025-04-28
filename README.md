@@ -66,8 +66,9 @@ MathMate addresses the challenge of personalized math education by creating an A
 
 ## 📽️ Demo & Deliverables
 
-- **Demo Video Link:** [Demo Video Link Here]
-- **Pitch Deck / PPT Link:** [Pitch Deck Link Here]
+- **Demo Video Link:** https://youtu.be/oXALaD_TKvs
+- **Pitch Deck / PPT Link:** https://drive.google.com/file/d/1cBpZqIDzLPqLo53Gl8zni31KO298-FDN/view?usp=sharing
+- **Deployment Link:** https://math-mate-hackhazards-25-lkz4.vercel.app/
 
 ---
 
