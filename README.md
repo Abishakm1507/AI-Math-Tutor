@@ -30,14 +30,6 @@ MathMate addresses the challenge of personalized math education by creating an A
 
 ---
 
-## ✅ Tasks & Bonus Checklist
-
-- [✅] **All members of the team completed the mandatory task - Followed at least 2 of our social channels and filled the form**
-- [✅] **All members of the team completed Bonus Task 1 - Sharing of Badges and filled the form (2 points)**
-- [✅] **All members of the team completed Bonus Task 2 - Signing up for Sprint.dev and filled the form (3 points)**
-
----
-
 ## 🧪 How to Run the Project
 
 ### Requirements:
@@ -49,10 +41,10 @@ MathMate addresses the challenge of personalized math education by creating an A
 ### Local Setup:
 ```bash
 # Clone the repo
-git clone https://github.com/your-username/mathmate
+git clone https://github.com/your-username/AI-Math-Tutor
 
 # Install dependencies
-cd mathmate
+cd AI-Math-Tutor
 npm install
 
 # Add your API keys and database project_id
