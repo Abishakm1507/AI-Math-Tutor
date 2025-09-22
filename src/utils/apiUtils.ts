@@ -1,6 +1,6 @@
 
-export const GROQ_API_KEY = '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';
-export const ELEVEN_LABS_API_KEY = 'sk_0a698d0fe41e151a6beb111e56e8c33e47b779c45349290c';
+export const GROQ_API_KEY = 'your-api-key';
+export const ELEVEN_LABS_API_KEY = 'your-api-key';
 
 // For text-based problems
 export async function solveWithGroq(problem: string): Promise<string> {
