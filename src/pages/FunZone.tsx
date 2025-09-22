@@ -18,7 +18,7 @@ import MathMemory from "@/components/games/MathMemory";
 import { RefreshCw } from "lucide-react";
 import { ProgressManager } from "@/utils/progress-manager";
 
-const GROK_API_KEY = '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';
+const GROK_API_KEY = 'your-api-key';
 
 interface FunFact {
   title: string;
