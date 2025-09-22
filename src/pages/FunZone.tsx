@@ -47,7 +47,7 @@ export default function FunZone() {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          model: "llama3-8b-8192",
+          model: "moonshotai/kimi-k2-instruct-0905",
           messages: [{
             role: "user",
             content: "Generate a random interesting math fact. Respond in this exact JSON format: {\"fact\": \"your fact here\", \"explanation\": \"your explanation here\"}. Do not include any text outside the JSON object."

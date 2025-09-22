@@ -85,7 +85,25 @@ const ProblemSolver = () => {
     for (const pattern of patterns) {
       const match = text.match(pattern);
       if (match) {
-        return match[1].trim();
+        // Convert to LaTeX format
+        let latex = match[1].trim()
+          .replace(/\^/g, '^{')  // Convert exponents
+          .replace(/(\d+|\w)\^{(\d+|\w)/g, '$1^{$2}')  // Complete exponent brackets
+          .replace(/sqrt\(/g, '\\sqrt{')  // Convert sqrt
+          .replace(/\)/g, '}')  // Close brackets
+          .replace(/\*/g, '\\cdot ')  // Convert multiplication
+          .replace(/(sin|cos|tan|log|ln)\(/g, '\\$1{')  // Convert functions
+          .replace(/pi/g, '\\pi ')  // Convert pi
+          .replace(/theta/g, '\\theta ')  // Convert theta
+          .replace(/##/g, "\n\n");
+
+
+        // Add missing closing braces for exponents
+        const openBraces = (latex.match(/\^{/g) || []).length;
+        const closeBraces = (latex.match(/}/g) || []).length;
+        latex += '}'.repeat(openBraces - (closeBraces - openBraces));
+
+        return latex;
       }
     }
     return null;
@@ -133,10 +151,10 @@ const ProblemSolver = () => {
       toast.error("Please enter a problem first");
       return;
     }
-  
+
     setIsLoading(true);
     setSolution("");
-  
+
     try {
       const solutionText = await solveWithGroq(problem);
       setSolution(solutionText);
@@ -406,10 +424,22 @@ const ProblemSolver = () => {
 
   const parseSteps = (text: string): Step[] => {
     const cleanText = text.replace(/\*\*([^*]+)\*\*/g, '$1').trim();
-    const stepRegex = /Step\s*(\d+)[\s:-]+([^]*?)(?=Step\s*\d+[\s:-]+|$)/gi;
     let steps: Step[] = [];
+  
+    // 1️⃣ Check if ## exists
+    if (cleanText.includes('##')) {
+      const parts = cleanText.split(/##/).map(p => p.trim()).filter(p => p);
+      steps = parts.map((content, i) => ({
+        number: (i + 1).toString(),
+        content,
+        hasFormula: content.includes('$') || content.includes('\\') || /[a-zA-Z][0-9]*[\^]/.test(content)
+      }));
+      return steps;
+    }
+  
+    // 2️⃣ Original Step N: ... format
+    const stepRegex = /Step\s*(\d+)[\s:-]+([^]*?)(?=Step\s*\d+[\s:-]+|$)/gi;
     let match;
-
     while ((match = stepRegex.exec(cleanText)) !== null) {
       steps.push({
         number: match[1],
@@ -417,7 +447,8 @@ const ProblemSolver = () => {
         hasFormula: match[2].includes('$') || match[2].includes('\\') || /[a-zA-Z][0-9]*[\^]/.test(match[2])
       });
     }
-
+  
+    // 3️⃣ Numbered list fallback: 1. ... 2) ...
     if (steps.length === 0) {
       const numberedRegex = /(\d+)[.)][\s]+([^]*?)(?=\d+[.)][\s]+|$)/g;
       while ((match = numberedRegex.exec(cleanText)) !== null) {
@@ -428,7 +459,8 @@ const ProblemSolver = () => {
         });
       }
     }
-
+  
+    // 4️⃣ Paragraph fallback
     if (steps.length === 0) {
       const paragraphs = cleanText.split(/\n{2,}/).filter(p => p.trim());
       if (paragraphs.length > 1) {
@@ -445,71 +477,54 @@ const ProblemSolver = () => {
         }];
       }
     }
-
+  
     return steps;
   };
+  
 
   const renderFormula = (text: string) => {
-    // Handle error messages as plain text
-    if (text.toLowerCase().includes("error") || text.toLowerCase().includes("sorry")) {
+    if (!text || text.toLowerCase().includes("error") || text.toLowerCase().includes("sorry")) {
       return text;
     }
 
-    // Split text into parts: LaTeX (delimited by $ or $$) and plain text
-    const parts = text.split(/(\$\$[^$]+\$\$|\$[^\$]+\$)/g);
+    // Ensure LaTeX delimiters are properly spaced
+    const cleanText = text
+      .replace(/\$\$/g, ' $$ ')  // Add spaces around block math
+      .replace(/([^\$])\$([^\$])/g, '$1 $ $2')  // Add spaces around inline math
+      .replace(/\s+/g, ' ')  // Normalize spaces
+      .replace(/##/g, "\n\n")
+      .trim();
+
+    const parts = cleanText.split(/(\$\$[^$]+\$\$|\$[^$]+\$)/g);
+
     return parts.map((part, index) => {
-      // Block math: $$...$$
-      if (part.startsWith('$$') && part.endsWith('$$')) {
-        const mathContent = part.slice(2, -2).trim();
+      if (!part.trim()) return null;
+
+      // Handle block math
+      if (part.trim().startsWith('$$') && part.trim().endsWith('$$')) {
+        const mathContent = part.trim().slice(2, -2).trim();
         try {
           return <BlockMath key={index}>{mathContent}</BlockMath>;
         } catch (error) {
-          console.warn(`Invalid LaTeX in block math: ${mathContent}`, error);
-          return <span key={index} className="text-red-500">[Invalid LaTeX: {mathContent}]</span>;
+          console.warn(`LaTeX Error (Block): ${mathContent}`, error);
+          return <span key={index} className="font-mono bg-yellow-50 p-1 rounded">{mathContent}</span>;
         }
       }
-      // Inline math: $...$
-      if (part.startsWith('$') && part.endsWith('$')) {
-        const mathContent = part.slice(1, -1).trim();
+
+      // Handle inline math
+      if (part.trim().startsWith('$') && part.trim().endsWith('$')) {
+        const mathContent = part.trim().slice(1, -1).trim();
         try {
           return <InlineMath key={index}>{mathContent}</InlineMath>;
         } catch (error) {
-          console.warn(`Invalid LaTeX in inline math: ${mathContent}`, error);
-          return <span key={index} className="text-red-500">[Invalid LaTeX: {mathContent}]</span>;
+          console.warn(`LaTeX Error (Inline): ${mathContent}`, error);
+          return <span key={index} className="font-mono bg-yellow-50 p-1 rounded">{mathContent}</span>;
         }
       }
-      // Plain text: Convert common math patterns to LaTeX
-      const processedText = part
-        .replace(/\b(\d+)\/(\d+)\b/g, '\\frac{$1}{$2}') // Fractions
-        .replace(/\b([a-zA-Z]+)\^(\d+)\b/g, '{$1}^{$2}') // Exponents
-        .replace(/\b([a-zA-Z])\s*\^\s*\{([^}]+)\}/g, '{$1}^{$2}') // Exponents with braces
-        .replace(/sqrt\((.*?)\)/g, '\\sqrt{$1}') // Square roots
-        .replace(/\b(sin|cos|tan|cot|sec|csc|log|ln|arcsin|arccos|arctan)\b/g, '\\$1') // Trig and log functions
-        .replace(/\bpi\b/g, '\\pi') // Pi
-        .replace(/\btheta\b/g, '\\theta') // Theta
-        .replace(/\bdelta\b/g, '\\Delta') // Delta
-        .replace(/\binfinity\b/g, '\\infty') // Infinity
-        .replace(/\*/g, '\\cdot ') // Multiplication
-        .replace(/([^\\])(sum|int|lim|prod)/g, '$1\\$2') // Sums, integrals, limits
-        .replace(/\b([a-zA-Z])\s*_\s*\{([^}]+)\}/g, '{$1}_{$2}') // Subscripts
-        .replace(/\b([a-zA-Z])\s*_\s*(\d+)/g, '{$1}_{$2}') // Subscripts with numbers
-        .replace(/\{([^}]+)\}\s*=\s*\{([^}]+)\}/g, '$1 = $2'); // Equations in braces
 
-      // Split processed text again in case new LaTeX was introduced
-      const subParts = processedText.split(/(\$[^\$]+\$)/g);
-      return subParts.map((subPart, subIndex) => {
-        if (subPart.startsWith('$') && subPart.endsWith('$')) {
-          const mathContent = subPart.slice(1, -1).trim();
-          try {
-            return <InlineMath key={`${index}-${subIndex}`}>{mathContent}</InlineMath>;
-          } catch (error) {
-            console.warn(`Invalid LaTeX in processed inline math: ${mathContent}`, error);
-            return <span key={`${index}-${subIndex}`} className="text-red-500">[Invalid LaTeX: {mathContent}]</span>;
-          }
-        }
-        return subPart;
-      });
-    });
+      // Return regular text with basic math symbol replacements
+      return <span key={index}>{part}</span>;
+    }).filter(Boolean);
   };
 
   const renderSolutionContent = (content: string) => {
@@ -776,47 +791,50 @@ const ProblemSolver = () => {
                         </div>
                       )}
                       {showGraph && (
-  <Card className="p-4 md:p-6">
-    <div className="space-y-4">
-      <div className="flex items-center justify-between">
-        <h3 className="text-lg font-semibold">Graph Visualization</h3>
-        <div className="flex gap-2">
-          <Button
-            variant={is3D ? "outline" : "default"}
-            onClick={() => setIs3D(false)}
-            className="w-20"
-          >
-            2D
-          </Button>
-          <Button
-            variant={is3D ? "default" : "outline"}
-            onClick={() => setIs3D(true)}
-            className="w-20"
-          >
-            3D
-          </Button>
-          <Button
-            variant="outline"
-            onClick={() => setShowGraph(false)}
-            className="ml-2"
-          >
-            Close
-          </Button>
-        </div>
-      </div>
-      
-      {is3D ? (
-        <Desmos3DCalculator equation={extractEquation(problem) || ''} />
-      ) : (
-        <DesmosCalculator
-          equation={extractEquation(problem) || ''}
-          domain={{ min: -10, max: 10 }}
-          range={{ min: -10, max: 10 }}
-        />
-      )}
-    </div>
-  </Card>
-)}
+                        <Card className="p-4 md:p-6">
+                          <div className="space-y-4">
+                            <div className="flex items-center justify-between">
+                              <h3 className="text-lg font-semibold">Graph Visualization</h3>
+                              <div className="flex gap-2">
+                                <Button
+                                  variant={is3D ? "outline" : "default"}
+                                  onClick={() => setIs3D(false)}
+                                  className="w-20"
+                                >
+                                  2D
+                                </Button>
+                                <Button
+                                  variant={is3D ? "default" : "outline"}
+                                  onClick={() => setIs3D(true)}
+                                  className="w-20"
+                                >
+                                  3D
+                                </Button>
+                                <Button
+                                  variant="outline"
+                                  onClick={() => setShowGraph(false)}
+                                  className="ml-2"
+                                >
+                                  Close
+                                </Button>
+                              </div>
+                            </div>
+
+                            {is3D ? (
+                              <Desmos3DCalculator
+                                equation={`y = ${extractEquation(problem) || ''}`}
+                              />
+                            ) : (
+                              <DesmosCalculator
+                              equation={`y = ${extractEquation(problem) || ''}`}
+                                domain={{ min: -10, max: 10 }}
+                                range={{ min: -10, max: 10 }}
+                              />
+                            )}
+
+                          </div>
+                        </Card>
+                      )}
                       {(showFollowUp || chatHistory.length > 0) ? (
                         <div className="pt-4 space-y-3">
                           <div className="relative flex items-center bg-white dark:bg-gray-950 border border-gray-300 dark:border-gray-700 rounded-full overflow-hidden shadow-sm focus-within:ring-2 focus-within:ring-indigo-500 focus-within:border-indigo-500">
@@ -856,7 +874,7 @@ const ProblemSolver = () => {
                           >
                             Visualize Graph
                           </Button>
-                          
+
                           <Button
                             variant="outline"
                             className="border-blue-600 text-blue-600 hover:bg-blue-50 transition-colors"

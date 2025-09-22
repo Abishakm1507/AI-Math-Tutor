@@ -9,6 +9,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Checkbox } from "@/components/ui/checkbox";
 import { FileUp, Timer, FilePlus, FileDown, Printer, CalendarClock, Copy, RefreshCw, Eye, Plus, Trash2 } from "lucide-react";
 import { MathLayout } from "@/components/MathLayout";
+import jsPDF from 'jspdf';
 
 export const GROK_API_KEY = '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';
 
@@ -56,6 +57,9 @@ const MockTest = () => {
       const newBlueprint = [...prev];
       if (field === "topic") {
         newBlueprint[index] = { ...newBlueprint[index], [field]: sanitizeInput(value as string) };
+      } else if (field === "numQuestions" || field === "marksPerQuestion") {
+        const numValue = Number(value);
+        newBlueprint[index] = { ...newBlueprint[index], [field]: numValue };
       } else {
         newBlueprint[index] = { ...newBlueprint[index], [field]: value };
       }
@@ -111,13 +115,13 @@ const MockTest = () => {
       if (!entry.topic) {
         return "All blueprint entries must specify a topic.";
       }
-      if (entry.numQuestions < 1) {
+      if (isNaN(entry.numQuestions) || entry.numQuestions < 1) {
         return "Number of questions per topic must be at least 1.";
       }
       if (!["1", "2", "3", "4", "5"].includes(entry.difficulty)) {
         return "Difficulty must be between 1 and 5.";
       }
-      if (entry.marksPerQuestion < 1) {
+      if (isNaN(entry.marksPerQuestion) || entry.marksPerQuestion < 1) {
         return "Marks per question must be at least 1.";
       }
     }
@@ -132,7 +136,7 @@ const MockTest = () => {
     for (let attempt = 1; attempt <= retries; attempt++) {
       try {
         const requestBody = {
-          model: "llama3-8b-8192", // Switched back to llama3 for stability
+          model: "moonshotai/kimi-k2-instruct-0905", // Switched back to llama3 for stability
           messages: [{ role: "user", content: prompt }],
           temperature: 0.1,
           max_tokens: 4000
@@ -273,7 +277,85 @@ Ensure questions align with the syllabus, education level, and blueprint. Return
   };
 
   const handleDownloadPDF = () => {
-    alert("PDF download functionality to be implemented");
+    const pdf = new jsPDF();
+    let yPos = 20;
+    const pageWidth = pdf.internal.pageSize.width;
+    const margin = 20;
+    const lineHeight = 7;
+
+    // Add title
+    pdf.setFontSize(16);
+    pdf.text(`Math Practice Exam - ${educationLevel.replace('-', ' ').replace(/\b\w/g, c => c.toUpperCase())} Level`, margin, yPos);
+    yPos += lineHeight * 2;
+
+    // Add exam details
+    pdf.setFontSize(10);
+    pdf.text(`Duration: ${duration} minutes`, margin, yPos);
+    yPos += lineHeight;
+    pdf.text(`Total Marks: ${calculateTotalMarks()}`, margin, yPos);
+    yPos += lineHeight * 2;
+
+    // Add questions
+    questions.forEach((question, index) => {
+      // Check if we need a new page
+      if (yPos > pdf.internal.pageSize.height - 20) {
+        pdf.addPage();
+        yPos = 20;
+      }
+
+      // Question text
+      pdf.setFont(undefined, 'bold');
+      pdf.text(`${question.id}. ${question.question}`, margin, yPos);
+      pdf.setFont(undefined, 'normal');
+      pdf.setFontSize(10);
+      pdf.text(`(${question.topic}, ${question.marks} marks)`, margin + 10, yPos + 5);
+      yPos += lineHeight * 2;
+
+      // Options
+      pdf.setFontSize(10);
+      question.options.forEach((option, optIndex) => {
+        if (yPos > pdf.internal.pageSize.height - 20) {
+          pdf.addPage();
+          yPos = 20;
+        }
+        pdf.text(`${String.fromCharCode(65 + optIndex)}) ${option}`, margin + 10, yPos);
+        yPos += lineHeight;
+      });
+      yPos += lineHeight;
+
+      // Add solution if shown
+      if (showSolutions[question.id]) {
+        if (yPos > pdf.internal.pageSize.height - 40) {
+          pdf.addPage();
+          yPos = 20;
+        }
+        pdf.setFont(undefined, 'bold');
+        pdf.text('Solution:', margin, yPos);
+        pdf.setFont(undefined, 'normal');
+        yPos += lineHeight;
+
+        // Split solution text to fit page width
+        const solutionLines = pdf.splitTextToSize(question.solution, pageWidth - margin * 2);
+        solutionLines.forEach(line => {
+          if (yPos > pdf.internal.pageSize.height - 20) {
+            pdf.addPage();
+            yPos = 20;
+          }
+          pdf.text(line, margin, yPos);
+          yPos += lineHeight;
+        });
+
+        pdf.text(`Correct Answer: ${question.options[question.correctAnswer]}`, margin, yPos);
+        yPos += lineHeight * 2;
+      }
+    });
+
+    // Add footer
+    pdf.setFontSize(10);
+    pdf.text(`Generated on ${new Date().toLocaleDateString()}`, margin, pdf.internal.pageSize.height - 10);
+
+    // Save the PDF
+    pdf.save('mock-test.pdf');
   };
 
   const handlePrint = () => {
@@ -390,9 +472,10 @@ Ensure questions align with the syllabus, education level, and blueprint. Return
                           <Input
                             id={`blueprint-num-${index}`}
                             type="number"
-                            min="1"
                             value={entry.numQuestions}
-                            onChange={(e) => handleBlueprintChange(index, "numQuestions", parseInt(e.target.value) || 1)}
+                            onChange={(e) => handleBlueprintChange(index, "numQuestions", e.target.value)}
+                            min="1"
+                            step="1"
                           />
                         </div>
                         <div className="w-24">
@@ -400,9 +483,10 @@ Ensure questions align with the syllabus, education level, and blueprint. Return
                           <Input
                             id={`blueprint-marks-${index}`}
                             type="number"
-                            min="1"
                             value={entry.marksPerQuestion}
-                            onChange={(e) => handleBlueprintChange(index, "marksPerQuestion", parseInt(e.target.value) || 1)}
+                            onChange={(e) => handleBlueprintChange(index, "marksPerQuestion", e.target.value)}
+                            min="1"
+                            step="1"
                           />
                         </div>
                         <div className="w-32">
@@ -454,7 +538,7 @@ Ensure questions align with the syllabus, education level, and blueprint. Return
                         onChange={(e) => setSyllabusFile(e.target.files?.[0] || null)}
                         className="file:mr-4 file:py-2 file:px-4
                           file:rounded-full file:border-0 file:bg-mathmate-100 file:text-mathmate-500
-                          hover:file:bg-mathmate-200 dark:file:bg-mathmate-700 dark:file:text-mathmate-300"
+                          hover:file:bg-mathmate-200 dark:file:bg-mathmate-700 dark:file:text-mathmate-300 h-25"
                       />
                       <Button variant="outline" size="icon">
                         <FileUp className="h-4 w-4" />
@@ -472,7 +556,7 @@ Ensure questions align with the syllabus, education level, and blueprint. Return
                         onChange={(e) => setStudyMaterialFile(e.target.files?.[0] || null)}
                         className="file:mr-4 file:py-2 file:px-4
                           file:rounded-full file:border-0 file:bg-mathmate-100 file:text-mathmate-500
-                          hover:file:bg-mathmate-200 dark:file:bg-mathmate-700 dark:file:text-mathmate-300"
+                          hover:file:bg-mathmate-200 dark:file:bg-mathmate-700 dark:file:text-mathmate-300 h-25"
                       />
                       <Button variant="outline" size="icon">
                         <FileUp className="h-4 w-4" />
@@ -543,9 +627,8 @@ Ensure questions align with the syllabus, education level, and blueprint. Return
                           <Input
                             id={`blueprint-num-${index}`}
                             type="number"
-                            min="1"
                             value={entry.numQuestions}
-                            onChange={(e) => handleBlueprintChange(index, "numQuestions", parseInt(e.target.value) || 1)}
+                            onChange={(e) => handleBlueprintChange(index, "numQuestions", e.target.value)}
                           />
                         </div>
                         <div className="w-24">
@@ -553,9 +636,8 @@ Ensure questions align with the syllabus, education level, and blueprint. Return
                           <Input
                             id={`blueprint-marks-${index}`}
                             type="number"
-                            min="1"
                             value={entry.marksPerQuestion}
-                            onChange={(e) => handleBlueprintChange(index, "marksPerQuestion", parseInt(e.target.value) || 1)}
+                            onChange={(e) => handleBlueprintChange(index, "marksPerQuestion", e.target.value)}
                           />
                         </div>
                         <div className="w-32">
