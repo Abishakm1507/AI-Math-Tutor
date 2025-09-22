@@ -11,7 +11,7 @@ import { ArrowLeft, Timer, Award, CheckCircle2, XCircle, BarChart } from "lucide
 import { MathLayout } from "@/components/MathLayout";
 import { Input } from "@/components/ui/input";
 
-export const GROK_API_KEY = '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';
+export const GROK_API_KEY = 'your-api-key';
 
 type QuizQuestion = {
   id: number;
