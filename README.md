@@ -41,7 +41,7 @@ MathMate addresses the challenge of personalized math education by creating an A
 ### Local Setup:
 ```bash
 # Clone the repo
-git clone https://github.com/your-username/AI-Math-Tutor
+git clone https://github.com/Abishakm1507/AI-Math-Tutor
 
 # Install dependencies
 cd AI-Math-Tutor
